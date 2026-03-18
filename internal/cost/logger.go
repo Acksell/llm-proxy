@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/Instawork/llm-proxy/internal/config"
+	"github.com/acksell/bezos/dynamodb/ddbiface"
 )
 
 // FileTransport implements Transport interface for file-based cost tracking
@@ -52,7 +53,7 @@ func (ft *FileTransport) FromConfig(transportConfig interface{}, logger *slog.Lo
 }
 
 // NewFileTransportFromConfig creates a FileTransport from configuration (convenience function)
-func NewFileTransportFromConfig(transportConfig interface{}, logger *slog.Logger) (Transport, error) {
+func NewFileTransportFromConfig(transportConfig interface{}, logger *slog.Logger, _ ddbiface.Client) (Transport, error) {
 	ft := &FileTransport{}
 	return ft.FromConfig(transportConfig, logger)
 }

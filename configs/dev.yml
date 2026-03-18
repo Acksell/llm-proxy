@@ -5,6 +5,10 @@
 
 enabled: true
 
+# Use in-memory DynamoDB backend for local development (no AWS credentials needed)
+dynamodb:
+  backend: "memory"
+
 features:
   cost_tracking:
     enabled: true

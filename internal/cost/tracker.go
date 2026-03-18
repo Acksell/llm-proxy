@@ -10,6 +10,7 @@ import (
 
 	"github.com/Instawork/llm-proxy/internal/config"
 	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/bezos/dynamodb/ddbiface"
 	"github.com/hbollon/go-edlib"
 )
 
@@ -111,10 +112,10 @@ func NewFileBasedCostTracker(outputFile string) *CostTracker {
 }
 
 // NewDynamoDBBasedCostTracker creates a new cost tracker with DynamoDB transport (convenience function)
-func NewDynamoDBBasedCostTracker(tableName, region string) (*CostTracker, error) {
+func NewDynamoDBBasedCostTracker(tableName string, client ddbiface.Client) (*CostTracker, error) {
 	config := DynamoDBTransportConfig{
+		Client:    client,
 		TableName: tableName,
-		Region:    region,
 	}
 	transport, err := NewDynamoDBTransport(config)
 	if err != nil {
@@ -571,8 +572,11 @@ func (ct *CostTracker) writeRecordToTransports(record *CostRecord) error {
 	return lastErr
 }
 
-// TransportFactory defines a function type for creating transports from configuration
-type TransportFactory func(transportConfig interface{}, logger *slog.Logger) (Transport, error)
+// TransportFactory defines a function type for creating transports from configuration.
+// The ddbClient parameter is optional and provides a shared DynamoDB client (e.g. an
+// in-memory ddbstore.Store for local development). Factories that don't use DynamoDB
+// should ignore it.
+type TransportFactory func(transportConfig interface{}, logger *slog.Logger, ddbClient ddbiface.Client) (Transport, error)
 
 // transportRegistry holds registered transport factories
 var transportRegistry = map[string]TransportFactory{
@@ -586,8 +590,10 @@ func RegisterTransportFactory(transportType string, factory TransportFactory) {
 	transportRegistry[transportType] = factory
 }
 
-// CreateTransportFromConfig creates a transport based on the provided configuration
-func CreateTransportFromConfig(transportConfig interface{}, logger *slog.Logger) (Transport, error) {
+// CreateTransportFromConfig creates a transport based on the provided configuration.
+// The ddbClient parameter is optional and provides a shared DynamoDB client for
+// transports that need it (e.g. the DynamoDB transport).
+func CreateTransportFromConfig(transportConfig interface{}, logger *slog.Logger, ddbClient ddbiface.Client) (Transport, error) {
 	var transportType string
 
 	// Extract transport type from different config formats
@@ -613,7 +619,7 @@ func CreateTransportFromConfig(transportConfig interface{}, logger *slog.Logger)
 	}
 
 	// Create the transport using the registered factory
-	return factory(transportConfig, logger)
+	return factory(transportConfig, logger, ddbClient)
 }
 
 // getSupportedTransportTypes returns a list of supported transport types

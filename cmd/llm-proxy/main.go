@@ -14,6 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/acksell/bezos/dynamodb/ddbiface"
+	"github.com/acksell/bezos/dynamodb/ddbstore"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+
 	"github.com/Instawork/llm-proxy/internal/apikeys"
 	"github.com/Instawork/llm-proxy/internal/config"
 	"github.com/Instawork/llm-proxy/internal/cost"
@@ -134,8 +140,47 @@ func init() {
 	slog.SetDefault(logger)
 }
 
+// createDynamoDBClient creates a DynamoDB client based on configuration.
+// When the backend is "memory", it creates an in-memory ddbstore.Store
+// that doesn't require real AWS credentials or a running DynamoDB instance.
+// Otherwise, it creates a real AWS DynamoDB client.
+func createDynamoDBClient(yamlConfig *config.YAMLConfig) (ddbiface.Client, func(), error) {
+	if yamlConfig.DynamoDB.IsMemoryBackend() {
+		logger.Info("DynamoDB: Using in-memory backend (ddbstore)")
+		store, err := ddbstore.New(ddbstore.StoreOptions{InMemory: true})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create in-memory DynamoDB store: %w", err)
+		}
+		cleanup := func() {
+			if err := store.Close(); err != nil {
+				logger.Error("Failed to close in-memory DynamoDB store", "error", err)
+			}
+		}
+		return store, cleanup, nil
+	}
+
+	// Default: real AWS DynamoDB client
+	region := yamlConfig.DynamoDB.Region
+	if region == "" {
+		region = yamlConfig.Features.APIKeyManagement.Region
+	}
+	if region == "" {
+		region = "us-west-2" // fallback default
+	}
+
+	logger.Info("DynamoDB: Using AWS backend", "region", region)
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion(region),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	client := dynamodb.NewFromConfig(awsCfg)
+	return client, func() {}, nil
+}
+
 // initializeCostTracker creates and configures the cost tracker with pricing data from config
-func initializeCostTracker(yamlConfig *config.YAMLConfig) *cost.CostTracker {
+func initializeCostTracker(yamlConfig *config.YAMLConfig, ddbClient ddbiface.Client) *cost.CostTracker {
 	// Check if cost tracking is enabled
 	if !yamlConfig.Features.CostTracking.Enabled {
 		logger.Info("💰 Cost Tracker: Cost tracking is disabled in config")
@@ -179,7 +224,7 @@ func initializeCostTracker(yamlConfig *config.YAMLConfig) *cost.CostTracker {
 			}
 		}
 
-		transport, err := cost.CreateTransportFromConfig(&transportConfig, logger)
+		transport, err := cost.CreateTransportFromConfig(&transportConfig, logger, ddbClient)
 		if err != nil {
 			// Log the failed config details
 			switch transportConfig.Type {
@@ -355,7 +400,7 @@ func initializeCostTracker(yamlConfig *config.YAMLConfig) *cost.CostTracker {
 }
 
 // initializeAPIKeyStore creates and configures the API key store from config
-func initializeAPIKeyStore(yamlConfig *config.YAMLConfig) providers.APIKeyStore {
+func initializeAPIKeyStore(yamlConfig *config.YAMLConfig, ddbClient ddbiface.Client) providers.APIKeyStore {
 	// Check if API key management is enabled
 	if !yamlConfig.Features.APIKeyManagement.Enabled {
 		logger.Info("🔑 API Key Store: API key management is disabled in config")
@@ -364,19 +409,18 @@ func initializeAPIKeyStore(yamlConfig *config.YAMLConfig) providers.APIKeyStore 
 
 	// Get API key management configuration
 	apiKeyConfig := yamlConfig.Features.APIKeyManagement
-	if apiKeyConfig.TableName == "" || apiKeyConfig.Region == "" {
-		logger.Error("🔑 API Key Store: Missing required configuration (table_name or region)")
+	if apiKeyConfig.TableName == "" {
+		logger.Error("🔑 API Key Store: Missing required configuration (table_name)")
 		return nil
 	}
 
 	logger.Info("🔑 API Key Store: Initializing API key store",
-		"table_name", apiKeyConfig.TableName,
-		"region", apiKeyConfig.Region)
+		"table_name", apiKeyConfig.TableName)
 
 	// Create the API key store
 	store, err := apikeys.NewStore(apikeys.StoreConfig{
+		Client:    ddbClient,
 		TableName: apiKeyConfig.TableName,
-		Region:    apiKeyConfig.Region,
 		Logger:    logger,
 	})
 	if err != nil {
@@ -478,6 +522,14 @@ func runServer(yamlConfig *config.YAMLConfig) {
 	// Log configuration
 	yamlConfig.LogConfiguration(logger)
 
+	// Create shared DynamoDB client (real or in-memory based on config)
+	ddbClient, ddbCleanup, err := createDynamoDBClient(yamlConfig)
+	if err != nil {
+		logger.Error("Failed to create DynamoDB client", "error", err)
+		os.Exit(1)
+	}
+	defer ddbCleanup()
+
 	// Create router
 	r := mux.NewRouter()
 
@@ -485,13 +537,13 @@ func runServer(yamlConfig *config.YAMLConfig) {
 	globalProviderManager = providers.NewProviderManager()
 
 	// Initialize cost tracker
-	globalCostTracker = initializeCostTracker(yamlConfig)
+	globalCostTracker = initializeCostTracker(yamlConfig, ddbClient)
 	if globalCostTracker != nil {
 		globalCostTracker.SetLogger(logger)
 	}
 
 	// Initialize API key store if enabled
-	globalAPIKeyStore = initializeAPIKeyStore(yamlConfig)
+	globalAPIKeyStore = initializeAPIKeyStore(yamlConfig, ddbClient)
 
 	// Initialize rate limiter if enabled
 	if yamlConfig.Features.RateLimiting.Enabled {

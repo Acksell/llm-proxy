@@ -13,6 +13,10 @@ import (
 
 	"github.com/Instawork/llm-proxy/internal/apikeys"
 	"github.com/Instawork/llm-proxy/internal/config"
+	"github.com/acksell/bezos/dynamodb/ddbiface"
+	"github.com/acksell/bezos/dynamodb/ddbstore"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 const (
@@ -70,10 +74,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create DynamoDB client based on config
+	ddbClient, ddbCleanup, err := createDynamoDBClient(yamlConfig, logger)
+	if err != nil {
+		logger.Error("Failed to create DynamoDB client", "error", err)
+		os.Exit(1)
+	}
+	defer ddbCleanup()
+
 	// Create API key store
 	store, err := apikeys.NewStore(apikeys.StoreConfig{
+		Client:    ddbClient,
 		TableName: yamlConfig.Features.APIKeyManagement.TableName,
-		Region:    yamlConfig.Features.APIKeyManagement.Region,
 		Logger:    logger,
 	})
 	if err != nil {
@@ -118,6 +130,42 @@ func loadConfig(configDir, environment string) (*config.YAMLConfig, error) {
 
 	// Load and merge configurations
 	return config.LoadAndMergeConfigs(configFiles)
+}
+
+// createDynamoDBClient creates a DynamoDB client based on configuration.
+func createDynamoDBClient(yamlConfig *config.YAMLConfig, logger *slog.Logger) (ddbiface.Client, func(), error) {
+	if yamlConfig.DynamoDB.IsMemoryBackend() {
+		logger.Info("DynamoDB: Using in-memory backend (ddbstore)")
+		store, err := ddbstore.New(ddbstore.StoreOptions{InMemory: true})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create in-memory DynamoDB store: %w", err)
+		}
+		cleanup := func() {
+			if err := store.Close(); err != nil {
+				logger.Error("Failed to close in-memory DynamoDB store", "error", err)
+			}
+		}
+		return store, cleanup, nil
+	}
+
+	// Default: real AWS DynamoDB client
+	region := yamlConfig.DynamoDB.Region
+	if region == "" {
+		region = yamlConfig.Features.APIKeyManagement.Region
+	}
+	if region == "" {
+		region = "us-west-2"
+	}
+
+	logger.Info("DynamoDB: Using AWS backend", "region", region)
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion(region),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	client := dynamodb.NewFromConfig(awsCfg)
+	return client, func() {}, nil
 }
 
 // handleCreate creates a new API key

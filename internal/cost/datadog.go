@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/acksell/bezos/dynamodb/ddbiface"
 
 	configPkg "github.com/Instawork/llm-proxy/internal/config"
 )
@@ -135,7 +136,7 @@ func (dt *DatadogTransport) FromConfig(transportConfig interface{}, logger *slog
 }
 
 // NewDatadogTransportFromConfig creates a DatadogTransport from configuration (convenience function)
-func NewDatadogTransportFromConfig(transportConfig interface{}, logger *slog.Logger) (Transport, error) {
+func NewDatadogTransportFromConfig(transportConfig interface{}, logger *slog.Logger, _ ddbiface.Client) (Transport, error) {
 	dt := &DatadogTransport{}
 	return dt.FromConfig(transportConfig, logger)
 }

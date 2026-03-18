@@ -5,17 +5,23 @@ import (
 	"testing"
 
 	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/bezos/dynamodb/ddbstore"
 )
 
 // TestDynamoDBTransportIntegration demonstrates how to use the DynamoDB transport
-// This is an integration test that requires AWS credentials and DynamoDB access
+// This test uses an in-memory DynamoDB backend so it doesn't require AWS credentials
 func TestDynamoDBTransportIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+
+	// Create an in-memory DynamoDB client for testing
+	store, err := ddbstore.New(ddbstore.StoreOptions{InMemory: true})
+	if err != nil {
+		t.Fatalf("Failed to create in-memory DynamoDB store: %v", err)
 	}
+	defer store.Close()
 
 	// Configuration for DynamoDB transport
 	config := DynamoDBTransportConfig{
+		Client:    store,
 		TableName: "llm-proxy-cost-tracking-test",
 		Region:    "us-west-2", // Change this to your preferred region
 		Logger:    slog.Default(),

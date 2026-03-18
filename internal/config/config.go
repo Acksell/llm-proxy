@@ -35,11 +35,30 @@ type YAMLConfig struct {
 	// Global settings
 	Enabled bool `yaml:"enabled"`
 
+	// DynamoDB backend configuration
+	DynamoDB DynamoDBBackendConfig `yaml:"dynamodb,omitempty"`
+
 	// Features configuration
 	Features FeaturesConfig `yaml:"features"`
 
 	// Providers configuration
 	Providers map[string]ProviderConfig `yaml:"providers"`
+}
+
+// DynamoDBBackendConfig configures how the application connects to DynamoDB.
+// When Backend is "memory", an in-memory store (bezos ddbstore) is used instead
+// of real AWS DynamoDB. This is useful for local development.
+type DynamoDBBackendConfig struct {
+	// Backend is the DynamoDB backend to use: "aws" (default) or "memory".
+	Backend string `yaml:"backend,omitempty"`
+	// Region is the AWS region. Only used when Backend is "aws".
+	Region string `yaml:"region,omitempty"`
+}
+
+// IsMemoryBackend returns true if the DynamoDB backend is configured to use
+// an in-memory store instead of real AWS DynamoDB.
+func (c *DynamoDBBackendConfig) IsMemoryBackend() bool {
+	return c.Backend == "memory"
 }
 
 // FeaturesConfig represents feature toggle configuration

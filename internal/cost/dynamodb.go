@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/acksell/bezos/dynamodb/ddbiface"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -17,6 +17,8 @@ import (
 
 // DynamoDBTransportConfig holds configuration for the DynamoDB transport
 type DynamoDBTransportConfig struct {
+	// Client is the DynamoDB client to use. If nil, it will be created from Region.
+	Client    ddbiface.Client
 	TableName string
 	Region    string
 	Logger    *slog.Logger
@@ -24,7 +26,7 @@ type DynamoDBTransportConfig struct {
 
 // DynamoDBTransport implements Transport interface for DynamoDB-based cost tracking
 type DynamoDBTransport struct {
-	client    *dynamodb.Client
+	client    ddbiface.Client
 	tableName string
 	logger    *slog.Logger
 }
@@ -59,16 +61,10 @@ type DynamoDBCostRecord struct {
 
 // NewDynamoDBTransport creates a new DynamoDB-based transport
 func NewDynamoDBTransport(cfg DynamoDBTransportConfig) (*DynamoDBTransport, error) {
-	// Load AWS configuration
-	awsConfig, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	client := cfg.Client
+	if client == nil {
+		return nil, fmt.Errorf("DynamoDB client is required in DynamoDBTransportConfig.Client")
 	}
-
-	// Create DynamoDB client
-	client := dynamodb.NewFromConfig(awsConfig)
 
 	logger := cfg.Logger
 	if logger == nil {
@@ -90,7 +86,7 @@ func NewDynamoDBTransport(cfg DynamoDBTransportConfig) (*DynamoDBTransport, erro
 }
 
 // FromConfig creates a DynamoDBTransport from configuration
-func (dt *DynamoDBTransport) FromConfig(transportConfig interface{}, logger *slog.Logger) (Transport, error) {
+func (dt *DynamoDBTransport) FromConfig(transportConfig interface{}, logger *slog.Logger, ddbClient ddbiface.Client) (Transport, error) {
 	switch cfg := transportConfig.(type) {
 	case *configPkg.TransportConfig:
 		if cfg.DynamoDB == nil {
@@ -102,6 +98,7 @@ func (dt *DynamoDBTransport) FromConfig(transportConfig interface{}, logger *slo
 			"region", cfg.DynamoDB.Region)
 
 		config := DynamoDBTransportConfig{
+			Client:    ddbClient,
 			TableName: cfg.DynamoDB.TableName,
 			Region:    cfg.DynamoDB.Region,
 			Logger:    logger,
@@ -127,6 +124,7 @@ func (dt *DynamoDBTransport) FromConfig(transportConfig interface{}, logger *slo
 			"region", region)
 
 		config := DynamoDBTransportConfig{
+			Client:    ddbClient,
 			TableName: tableName,
 			Region:    region,
 			Logger:    logger,
@@ -139,9 +137,9 @@ func (dt *DynamoDBTransport) FromConfig(transportConfig interface{}, logger *slo
 }
 
 // NewDynamoDBTransportFromConfig creates a DynamoDBTransport from configuration (convenience function)
-func NewDynamoDBTransportFromConfig(transportConfig interface{}, logger *slog.Logger) (Transport, error) {
+func NewDynamoDBTransportFromConfig(transportConfig interface{}, logger *slog.Logger, ddbClient ddbiface.Client) (Transport, error) {
 	dt := &DynamoDBTransport{}
-	return dt.FromConfig(transportConfig, logger)
+	return dt.FromConfig(transportConfig, logger, ddbClient)
 }
 
 // ensureTableExists creates the DynamoDB table if it doesn't exist
@@ -262,13 +260,15 @@ func (dt *DynamoDBTransport) ensureTableExists(ctx context.Context) error {
 		return fmt.Errorf("failed to create table: %w", err)
 	}
 
-	// Wait for table to become active
-	waiter := dynamodb.NewTableExistsWaiter(dt.client)
-	err = waiter.Wait(ctx, &dynamodb.DescribeTableInput{
-		TableName: aws.String(dt.tableName),
-	}, 5*time.Minute)
-	if err != nil {
-		return fmt.Errorf("failed waiting for table to become active: %w", err)
+	// Only use the waiter for real AWS DynamoDB clients (ddbstore creates tables synchronously)
+	if realClient, ok := dt.client.(*dynamodb.Client); ok {
+		waiter := dynamodb.NewTableExistsWaiter(realClient)
+		err = waiter.Wait(ctx, &dynamodb.DescribeTableInput{
+			TableName: aws.String(dt.tableName),
+		}, 5*time.Minute)
+		if err != nil {
+			return fmt.Errorf("failed waiting for table to become active: %w", err)
+		}
 	}
 
 	dt.logger.Info("DynamoDB table created successfully", "table", dt.tableName)
