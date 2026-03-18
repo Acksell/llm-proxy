@@ -215,9 +215,8 @@ func (s *Store) CreateKey(ctx context.Context, provider, actualKey, description 
 	return apiKey, nil
 }
 
-// GetKey retrieves an API key by its iw: prefixed key
+// GetKey retrieves an API key by its iw: prefixed key.
 func (s *Store) GetKey(ctx context.Context, key string) (*APIKey, error) {
-	// Validate key format
 	if !strings.HasPrefix(key, KeyPrefix) {
 		return nil, fmt.Errorf("invalid key format: must start with %s", KeyPrefix)
 	}
@@ -239,16 +238,6 @@ func (s *Store) GetKey(ctx context.Context, key string) (*APIKey, error) {
 	var apiKey APIKey
 	if err := attributevalue.UnmarshalMap(result.Item, &apiKey); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal API key: %w", err)
-	}
-
-	// Check if key is expired
-	if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
-		return nil, fmt.Errorf("API key has expired")
-	}
-
-	// Check if key is enabled
-	if !apiKey.Enabled {
-		return nil, fmt.Errorf("API key is disabled")
 	}
 
 	return &apiKey, nil
@@ -383,7 +372,8 @@ func (s *Store) ListKeys(ctx context.Context, provider string) ([]*APIKey, error
 	return keys, nil
 }
 
-// ValidateAndGetActualKey validates an API key and returns the actual provider key
+// ValidateAndGetActualKey validates an API key and returns the actual provider key.
+// Returns an error if the key is disabled or expired.
 func (s *Store) ValidateAndGetActualKey(ctx context.Context, key string) (string, string, error) {
 	// If key doesn't have our prefix, return it as-is (passthrough)
 	if !strings.HasPrefix(key, KeyPrefix) {
@@ -396,6 +386,12 @@ func (s *Store) ValidateAndGetActualKey(ctx context.Context, key string) (string
 		return "", "", fmt.Errorf("invalid API key: %w", err)
 	}
 
-	// Return the actual provider key and provider name
+	if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
+		return "", "", fmt.Errorf("API key has expired")
+	}
+	if !apiKey.Enabled {
+		return "", "", fmt.Errorf("API key is disabled")
+	}
+
 	return apiKey.ActualKey, apiKey.Provider, nil
 }
