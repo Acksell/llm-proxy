@@ -23,6 +23,7 @@ RUN go mod download
 COPY cmd/ cmd/
 COPY internal/ internal/
 COPY configs/ configs/
+COPY pkg/ pkg/
 
 # Create logs directory
 RUN mkdir -p logs

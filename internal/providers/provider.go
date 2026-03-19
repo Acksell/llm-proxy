@@ -23,10 +23,12 @@ type LLMResponseMetadata struct {
 	Model string `json:"model"`
 
 	// Token usage information
-	InputTokens   int `json:"input_tokens"`
-	OutputTokens  int `json:"output_tokens"`
-	TotalTokens   int `json:"total_tokens"`
-	ThoughtTokens int `json:"thought_tokens,omitempty"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	TotalTokens              int `json:"total_tokens"`
+	ThoughtTokens            int `json:"thought_tokens,omitempty"`
+	CachedInputTokens        int `json:"cached_input_tokens,omitempty"`         // Tokens served from cache (discounted)
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"` // Tokens written to cache (Anthropic surcharge)
 
 	// Provider-specific information
 	Provider  string `json:"provider"`

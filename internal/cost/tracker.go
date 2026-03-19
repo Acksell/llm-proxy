@@ -29,17 +29,21 @@ type Transport interface {
 
 // PricingTier represents a pricing tier with a token threshold.
 type PricingTier struct {
-	Threshold int     `json:"threshold"` // The token threshold for this tier
-	Input     float64 `json:"input"`     // Cost per 1M input tokens in USD
-	Output    float64 `json:"output"`    // Cost per 1M output tokens in USD
+	Threshold          int     `json:"threshold"`                      // The token threshold for this tier
+	Input              float64 `json:"input"`                          // Cost per 1M input tokens in USD
+	Output             float64 `json:"output"`                         // Cost per 1M output tokens in USD
+	CachedInput        float64 `json:"cached_input,omitempty"`         // Cost per 1M cached input tokens in USD (0 = use input rate)
+	CacheCreationInput float64 `json:"cache_creation_input,omitempty"` // Cost per 1M cache creation tokens in USD (0 = use input rate)
 }
 
 // ModelPricing represents pricing information for a model (matching config structure)
 type ModelPricing struct {
 	Tiers     []PricingTier `json:"tiers,omitempty"`
 	Overrides map[string]struct {
-		Input  float64 `json:"input"`
-		Output float64 `json:"output"`
+		Input              float64 `json:"input"`
+		Output             float64 `json:"output"`
+		CachedInput        float64 `json:"cached_input,omitempty"`
+		CacheCreationInput float64 `json:"cache_creation_input,omitempty"`
 	} `json:"overrides,omitempty"`
 }
 
@@ -58,15 +62,19 @@ type CostRecord struct {
 	IsStreaming bool   `json:"is_streaming"`
 
 	// Token usage
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	TotalTokens              int `json:"total_tokens"`
+	CachedInputTokens        int `json:"cached_input_tokens,omitempty"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
 
 	// Cost calculation
-	InputCost  float64 `json:"input_cost"`  // Cost for input tokens in USD
-	OutputCost float64 `json:"output_cost"` // Cost for output tokens in USD
-	TotalCost  float64 `json:"total_cost"`  // Total cost in USD
-	IsEstimate bool    `json:"is_estimate"` // Whether this cost is an estimate based on fuzzy matching
+	InputCost              float64 `json:"input_cost"`                          // Cost for input tokens in USD
+	OutputCost             float64 `json:"output_cost"`                         // Cost for output tokens in USD
+	CachedInputCost        float64 `json:"cached_input_cost,omitempty"`         // Cost for cached input tokens in USD
+	CacheCreationInputCost float64 `json:"cache_creation_input_cost,omitempty"` // Cost for cache creation tokens in USD
+	TotalCost              float64 `json:"total_cost"`                          // Total cost in USD
+	IsEstimate             bool    `json:"is_estimate"`                         // Whether this cost is an estimate based on fuzzy matching
 
 	// Additional metadata
 	FinishReason string `json:"finish_reason,omitempty"`
@@ -351,7 +359,12 @@ func (ct *CostTracker) GetPricingForModel(provider, model string, inputTokens in
 		if modelPricing, exists := providerPricing[model]; exists {
 			// Handle overrides first
 			if override, ok := modelPricing.Overrides[model]; ok {
-				return &PricingTier{Input: override.Input, Output: override.Output}, nil
+				return &PricingTier{
+					Input:              override.Input,
+					Output:             override.Output,
+					CachedInput:        override.CachedInput,
+					CacheCreationInput: override.CacheCreationInput,
+				}, nil
 			}
 			// Handle tiered pricing
 			if len(modelPricing.Tiers) > 0 {
@@ -429,6 +442,52 @@ func (ct *CostTracker) GetPricingForModelWithFuzzyMatch(provider, model string, 
 	return pricing, closestModel, true, nil // Fuzzy match found
 }
 
+// CostBreakdown represents the detailed cost breakdown for a request
+type CostBreakdown struct {
+	InputCost              float64
+	OutputCost             float64
+	CachedInputCost        float64
+	CacheCreationInputCost float64
+	TotalCost              float64
+	MatchedModel           string
+	IsEstimate             bool
+}
+
+// calculateCostFromPricing computes the cost breakdown given a pricing tier and token counts.
+// For cached tokens, the cost is calculated separately at the cached rate.
+// The inputTokens count from the provider is the total input tokens including cached and cache-creation tokens.
+// So: non-cached input = inputTokens - cachedInputTokens - cacheCreationInputTokens
+func calculateCostFromPricing(pricing *PricingTier, inputTokens, outputTokens, cachedInputTokens, cacheCreationInputTokens int) CostBreakdown {
+	cachedRate := pricing.CachedInput
+	if cachedRate == 0 {
+		cachedRate = pricing.Input // fallback: charge at full input rate
+	}
+	cacheCreationRate := pricing.CacheCreationInput
+	if cacheCreationRate == 0 {
+		cacheCreationRate = pricing.Input // fallback: charge at full input rate
+	}
+
+	// Non-cached input tokens = total input - cached - cache creation
+	nonCachedInput := inputTokens - cachedInputTokens - cacheCreationInputTokens
+	if nonCachedInput < 0 {
+		nonCachedInput = 0
+	}
+
+	inputCost := (float64(nonCachedInput) / 1_000_000.0) * pricing.Input
+	cachedInputCost := (float64(cachedInputTokens) / 1_000_000.0) * cachedRate
+	cacheCreationInputCost := (float64(cacheCreationInputTokens) / 1_000_000.0) * cacheCreationRate
+	outputCost := (float64(outputTokens) / 1_000_000.0) * pricing.Output
+	totalCost := inputCost + cachedInputCost + cacheCreationInputCost + outputCost
+
+	return CostBreakdown{
+		InputCost:              roundUpTo4Decimals(inputCost),
+		OutputCost:             roundUpTo4Decimals(outputCost),
+		CachedInputCost:        roundUpTo4Decimals(cachedInputCost),
+		CacheCreationInputCost: roundUpTo4Decimals(cacheCreationInputCost),
+		TotalCost:              roundUpTo4Decimals(totalCost),
+	}
+}
+
 // CalculateCost calculates the cost for a request based on token usage
 func (ct *CostTracker) CalculateCost(provider, model string, inputTokens, outputTokens int) (float64, float64, float64, error) {
 	pricing, err := ct.GetPricingForModel(provider, model, inputTokens)
@@ -436,90 +495,83 @@ func (ct *CostTracker) CalculateCost(provider, model string, inputTokens, output
 		return 0, 0, 0, err
 	}
 
-	// Calculate costs (pricing is per 1M tokens and in dollars)
-	inputCost := (float64(inputTokens) / 1_000_000.0) * pricing.Input
-	outputCost := (float64(outputTokens) / 1_000_000.0) * pricing.Output
-	totalCost := inputCost + outputCost
-
-	// Round up all costs to the nearest 4th decimal place
-	inputCost = roundUpTo4Decimals(inputCost)
-	outputCost = roundUpTo4Decimals(outputCost)
-	totalCost = roundUpTo4Decimals(totalCost)
-	return inputCost, outputCost, totalCost, nil
+	bd := calculateCostFromPricing(pricing, inputTokens, outputTokens, 0, 0)
+	return bd.InputCost, bd.OutputCost, bd.TotalCost, nil
 }
 
 // CalculateCostWithFuzzyMatch calculates the cost for a request with fuzzy matching fallback
-func (ct *CostTracker) CalculateCostWithFuzzyMatch(provider, model string, inputTokens, outputTokens int) (float64, float64, float64, string, bool, error) {
+func (ct *CostTracker) CalculateCostWithFuzzyMatch(provider, model string, inputTokens, outputTokens, cachedInputTokens, cacheCreationInputTokens int) (*CostBreakdown, error) {
 	// Try to get pricing with fuzzy matching
 	pricing, matchedModel, isEstimate, err := ct.GetPricingForModelWithFuzzyMatch(provider, model, inputTokens)
 	if err != nil {
-		return 0, 0, 0, "", false, err
+		return nil, err
 	}
 
-	// Calculate costs (pricing is per 1M tokens and in dollars)
-	inputCost := (float64(inputTokens) / 1_000_000.0) * pricing.Input
-	outputCost := (float64(outputTokens) / 1_000_000.0) * pricing.Output
-	totalCost := inputCost + outputCost
-
-	// Round up all costs to the nearest 4th decimal place
-	inputCost = roundUpTo4Decimals(inputCost)
-	outputCost = roundUpTo4Decimals(outputCost)
-	totalCost = roundUpTo4Decimals(totalCost)
-
-	return inputCost, outputCost, totalCost, matchedModel, isEstimate, nil
+	bd := calculateCostFromPricing(pricing, inputTokens, outputTokens, cachedInputTokens, cacheCreationInputTokens)
+	bd.MatchedModel = matchedModel
+	bd.IsEstimate = isEstimate
+	return &bd, nil
 }
 
 // TrackRequest processes a request and writes cost information to transports (sync or async based on configuration)
 func (ct *CostTracker) TrackRequest(metadata *providers.LLMResponseMetadata, userID, ipAddress, endpoint string) error {
 	// Calculate costs with fuzzy matching fallback
-	inputCost, outputCost, totalCost, matchedModel, isEstimate, err := ct.CalculateCostWithFuzzyMatch(
+	bd, err := ct.CalculateCostWithFuzzyMatch(
 		metadata.Provider,
 		metadata.Model,
 		metadata.InputTokens,
 		metadata.OutputTokens,
+		metadata.CachedInputTokens,
+		metadata.CacheCreationInputTokens,
 	)
 	if err != nil {
 		ct.logger.Debug("Could not calculate cost for request", "provider", metadata.Provider, "model", metadata.Model, "error", err)
 		// Continue with zero costs rather than failing
-		inputCost, outputCost, totalCost = 0, 0, 0
-		isEstimate = false
-		matchedModel = ""
+		bd = &CostBreakdown{}
 	}
 
 	// Create cost record
 	record := &CostRecord{
-		Timestamp:    time.Now(),
-		RequestID:    metadata.RequestID,
-		UserID:       userID,
-		IPAddress:    ipAddress,
-		Provider:     metadata.Provider,
-		Model:        metadata.Model,
-		Endpoint:     endpoint,
-		IsStreaming:  metadata.IsStreaming,
-		InputTokens:  metadata.InputTokens,
-		OutputTokens: metadata.OutputTokens,
-		TotalTokens:  metadata.TotalTokens,
-		InputCost:    inputCost,
-		OutputCost:   outputCost,
-		TotalCost:    totalCost,
-		IsEstimate:   isEstimate,
-		FinishReason: metadata.FinishReason,
-		MatchedModel: matchedModel,
+		Timestamp:                time.Now(),
+		RequestID:                metadata.RequestID,
+		UserID:                   userID,
+		IPAddress:                ipAddress,
+		Provider:                 metadata.Provider,
+		Model:                    metadata.Model,
+		Endpoint:                 endpoint,
+		IsStreaming:              metadata.IsStreaming,
+		InputTokens:              metadata.InputTokens,
+		OutputTokens:             metadata.OutputTokens,
+		TotalTokens:              metadata.TotalTokens,
+		CachedInputTokens:        metadata.CachedInputTokens,
+		CacheCreationInputTokens: metadata.CacheCreationInputTokens,
+		InputCost:                bd.InputCost,
+		OutputCost:               bd.OutputCost,
+		CachedInputCost:          bd.CachedInputCost,
+		CacheCreationInputCost:   bd.CacheCreationInputCost,
+		TotalCost:                bd.TotalCost,
+		IsEstimate:               bd.IsEstimate,
+		FinishReason:             metadata.FinishReason,
+		MatchedModel:             bd.MatchedModel,
 	}
 
 	// Log the cost information
-	if totalCost > 0 {
-		if isEstimate {
+	if bd.TotalCost > 0 {
+		if bd.IsEstimate {
 			ct.logger.Warn("💵 Cost Tracking: Request processed (Fuzzy Match)",
 				"provider", metadata.Provider,
 				"requested_model", metadata.Model,
-				"matched_model", matchedModel,
+				"matched_model", bd.MatchedModel,
 				"total_tokens", metadata.TotalTokens,
 				"input_tokens", metadata.InputTokens,
 				"output_tokens", metadata.OutputTokens,
-				"total_cost", totalCost,
-				"input_cost", inputCost,
-				"output_cost", outputCost)
+				"cached_input_tokens", metadata.CachedInputTokens,
+				"cache_creation_input_tokens", metadata.CacheCreationInputTokens,
+				"total_cost", bd.TotalCost,
+				"input_cost", bd.InputCost,
+				"output_cost", bd.OutputCost,
+				"cached_input_cost", bd.CachedInputCost,
+				"cache_creation_input_cost", bd.CacheCreationInputCost)
 		} else {
 			ct.logger.Debug("💵 Cost Tracking: Request processed",
 				"provider", metadata.Provider,
@@ -527,9 +579,13 @@ func (ct *CostTracker) TrackRequest(metadata *providers.LLMResponseMetadata, use
 				"total_tokens", metadata.TotalTokens,
 				"input_tokens", metadata.InputTokens,
 				"output_tokens", metadata.OutputTokens,
-				"total_cost", totalCost,
-				"input_cost", inputCost,
-				"output_cost", outputCost)
+				"cached_input_tokens", metadata.CachedInputTokens,
+				"cache_creation_input_tokens", metadata.CacheCreationInputTokens,
+				"total_cost", bd.TotalCost,
+				"input_cost", bd.InputCost,
+				"output_cost", bd.OutputCost,
+				"cached_input_cost", bd.CachedInputCost,
+				"cache_creation_input_cost", bd.CacheCreationInputCost)
 		}
 	} else {
 		ct.logger.Debug("💵 Cost Tracking: Request processed (no pricing configured)",

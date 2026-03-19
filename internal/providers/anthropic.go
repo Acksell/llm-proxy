@@ -214,8 +214,10 @@ type AnthropicResponse struct {
 
 // AnthropicUsage represents token usage in Anthropic responses
 type AnthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
 }
 
 // AnthropicContent represents content in Anthropic responses
@@ -289,14 +291,16 @@ func (a *AnthropicProxy) parseNonStreamingResponse(responseBody io.Reader) (*LLM
 	}
 
 	metadata := &LLMResponseMetadata{
-		Model:        response.Model,
-		InputTokens:  response.Usage.InputTokens,
-		OutputTokens: response.Usage.OutputTokens,
-		TotalTokens:  response.Usage.InputTokens + response.Usage.OutputTokens,
-		Provider:     "anthropic",
-		RequestID:    response.ID,
-		IsStreaming:  false,
-		FinishReason: response.StopReason,
+		Model:                    response.Model,
+		InputTokens:              response.Usage.InputTokens,
+		OutputTokens:             response.Usage.OutputTokens,
+		TotalTokens:              response.Usage.InputTokens + response.Usage.OutputTokens,
+		CachedInputTokens:        response.Usage.CacheReadInputTokens,
+		CacheCreationInputTokens: response.Usage.CacheCreationInputTokens,
+		Provider:                 "anthropic",
+		RequestID:                response.ID,
+		IsStreaming:              false,
+		FinishReason:             response.StopReason,
 	}
 
 	return metadata, nil
@@ -325,6 +329,8 @@ func (a *AnthropicProxy) parseStreamingResponse(responseBody io.Reader) (*LLMRes
 	// Track token usage as we accumulate it from different events
 	var inputTokens int = 0
 	var outputTokens int = 0
+	var cacheReadInputTokens int = 0
+	var cacheCreationInputTokens int = 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -364,8 +370,10 @@ func (a *AnthropicProxy) parseStreamingResponse(responseBody io.Reader) (*LLMRes
 				if streamResponse.Message.Usage.OutputTokens > 0 {
 					outputTokens = streamResponse.Message.Usage.OutputTokens
 				}
-				log.Printf("🔍 Anthropic: message_start - Input: %d, Output: %d",
-					inputTokens, outputTokens)
+				cacheReadInputTokens = streamResponse.Message.Usage.CacheReadInputTokens
+				cacheCreationInputTokens = streamResponse.Message.Usage.CacheCreationInputTokens
+				log.Printf("🔍 Anthropic: message_start - Input: %d, Output: %d, CacheRead: %d, CacheCreation: %d",
+					inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens)
 			}
 		case "message_delta":
 			if streamResponse.Delta != nil && streamResponse.Delta.StopReason != "" {
@@ -384,17 +392,19 @@ func (a *AnthropicProxy) parseStreamingResponse(responseBody io.Reader) (*LLMRes
 			// Final message - create metadata with accumulated usage information
 			if inputTokens > 0 || outputTokens > 0 {
 				metadata = &LLMResponseMetadata{
-					Model:        model,
-					InputTokens:  inputTokens,
-					OutputTokens: outputTokens,
-					TotalTokens:  inputTokens + outputTokens,
-					Provider:     "anthropic",
-					RequestID:    requestID,
-					IsStreaming:  true,
-					FinishReason: finishReason,
+					Model:                    model,
+					InputTokens:              inputTokens,
+					OutputTokens:             outputTokens,
+					TotalTokens:              inputTokens + outputTokens,
+					CachedInputTokens:        cacheReadInputTokens,
+					CacheCreationInputTokens: cacheCreationInputTokens,
+					Provider:                 "anthropic",
+					RequestID:                requestID,
+					IsStreaming:              true,
+					FinishReason:             finishReason,
 				}
-				log.Printf("🔍 Anthropic: message_stop - Final tokens - Input: %d, Output: %d, Total: %d",
-					inputTokens, outputTokens, inputTokens+outputTokens)
+				log.Printf("🔍 Anthropic: message_stop - Final tokens - Input: %d, Output: %d, Total: %d, CacheRead: %d, CacheCreation: %d",
+					inputTokens, outputTokens, inputTokens+outputTokens, cacheReadInputTokens, cacheCreationInputTokens)
 			}
 		}
 	}
@@ -410,17 +420,19 @@ func (a *AnthropicProxy) parseStreamingResponse(responseBody io.Reader) (*LLMRes
 
 	// If we have accumulated token counts even without message_stop, create metadata
 	if hasData && (inputTokens > 0 || outputTokens > 0) && (model != "" || requestID != "") {
-		log.Printf("🔍 Anthropic: Creating metadata from accumulated usage - Input: %d, Output: %d",
-			inputTokens, outputTokens)
+		log.Printf("🔍 Anthropic: Creating metadata from accumulated usage - Input: %d, Output: %d, CacheRead: %d, CacheCreation: %d",
+			inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens)
 		return &LLMResponseMetadata{
-			Model:        model,
-			InputTokens:  inputTokens,
-			OutputTokens: outputTokens,
-			TotalTokens:  inputTokens + outputTokens,
-			Provider:     "anthropic",
-			RequestID:    requestID,
-			IsStreaming:  true,
-			FinishReason: finishReason,
+			Model:                    model,
+			InputTokens:              inputTokens,
+			OutputTokens:             outputTokens,
+			TotalTokens:              inputTokens + outputTokens,
+			CachedInputTokens:        cacheReadInputTokens,
+			CacheCreationInputTokens: cacheCreationInputTokens,
+			Provider:                 "anthropic",
+			RequestID:                requestID,
+			IsStreaming:              true,
+			FinishReason:             finishReason,
 		}, nil
 	}
 

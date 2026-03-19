@@ -182,10 +182,11 @@ type GeminiResponse struct {
 
 // GeminiUsage represents token usage in Gemini responses
 type GeminiUsage struct {
-	PromptTokenCount     int `json:"promptTokenCount"`
-	CandidatesTokenCount int `json:"candidatesTokenCount"`
-	TotalTokenCount      int `json:"totalTokenCount"`
-	ThoughtsTokenCount   int `json:"thoughtsTokenCount,omitempty"`
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	TotalTokenCount         int `json:"totalTokenCount"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount,omitempty"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount,omitempty"`
 }
 
 // GeminiCandidate represents a candidate response
@@ -249,14 +250,15 @@ func (g *GeminiProxy) parseNonStreamingResponse(responseBody io.Reader) (*LLMRes
 	}
 
 	metadata := &LLMResponseMetadata{
-		Model:         model,
-		InputTokens:   response.UsageMetadata.PromptTokenCount,
-		OutputTokens:  response.UsageMetadata.CandidatesTokenCount,
-		TotalTokens:   response.UsageMetadata.TotalTokenCount,
-		ThoughtTokens: response.UsageMetadata.ThoughtsTokenCount,
-		Provider:      "gemini",
-		RequestID:     response.ResponseId,
-		IsStreaming:   false,
+		Model:             model,
+		InputTokens:       response.UsageMetadata.PromptTokenCount,
+		OutputTokens:      response.UsageMetadata.CandidatesTokenCount,
+		TotalTokens:       response.UsageMetadata.TotalTokenCount,
+		ThoughtTokens:     response.UsageMetadata.ThoughtsTokenCount,
+		CachedInputTokens: response.UsageMetadata.CachedContentTokenCount,
+		Provider:          "gemini",
+		RequestID:         response.ResponseId,
+		IsStreaming:       false,
 	}
 
 	// Extract finish reason from the first candidate if available
@@ -319,14 +321,15 @@ func (g *GeminiProxy) parseStreamingResponse(responseBody io.Reader) (*LLMRespon
 		// The usage information is typically in the final chunk
 		if streamResponse.UsageMetadata != nil {
 			metadata = &LLMResponseMetadata{
-				Model:         model,
-				InputTokens:   streamResponse.UsageMetadata.PromptTokenCount,
-				OutputTokens:  streamResponse.UsageMetadata.CandidatesTokenCount,
-				TotalTokens:   streamResponse.UsageMetadata.TotalTokenCount,
-				ThoughtTokens: streamResponse.UsageMetadata.ThoughtsTokenCount,
-				Provider:      "gemini",
-				IsStreaming:   true,
-				FinishReason:  finishReason,
+				Model:             model,
+				InputTokens:       streamResponse.UsageMetadata.PromptTokenCount,
+				OutputTokens:      streamResponse.UsageMetadata.CandidatesTokenCount,
+				TotalTokens:       streamResponse.UsageMetadata.TotalTokenCount,
+				ThoughtTokens:     streamResponse.UsageMetadata.ThoughtsTokenCount,
+				CachedInputTokens: streamResponse.UsageMetadata.CachedContentTokenCount,
+				Provider:          "gemini",
+				IsStreaming:       true,
+				FinishReason:      finishReason,
 			}
 		}
 	}

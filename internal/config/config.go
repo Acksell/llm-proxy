@@ -150,15 +150,19 @@ type ModelConfig struct {
 
 // Pricing represents a simple input/output cost structure.
 type Pricing struct {
-	Input  float64 `yaml:"input"`  // Cost per 1M input tokens in USD
-	Output float64 `yaml:"output"` // Cost per 1M output tokens in USD
+	Input              float64 `yaml:"input"`                          // Cost per 1M input tokens in USD
+	Output             float64 `yaml:"output"`                         // Cost per 1M output tokens in USD
+	CachedInput        float64 `yaml:"cached_input,omitempty"`         // Cost per 1M cached input tokens in USD (0 = use input rate)
+	CacheCreationInput float64 `yaml:"cache_creation_input,omitempty"` // Cost per 1M cache creation tokens in USD (Anthropic; 0 = use input rate)
 }
 
 // PricingTier represents a pricing tier with a token threshold.
 type PricingTier struct {
-	Threshold int     `yaml:"threshold"` // The token threshold for this tier
-	Input     float64 `yaml:"input"`     // Cost per 1M input tokens in USD
-	Output    float64 `yaml:"output"`    // Cost per 1M output tokens in USD
+	Threshold          int     `yaml:"threshold"`                      // The token threshold for this tier
+	Input              float64 `yaml:"input"`                          // Cost per 1M input tokens in USD
+	Output             float64 `yaml:"output"`                         // Cost per 1M output tokens in USD
+	CachedInput        float64 `yaml:"cached_input,omitempty"`         // Cost per 1M cached input tokens in USD (0 = use input rate)
+	CacheCreationInput float64 `yaml:"cache_creation_input,omitempty"` // Cost per 1M cache creation tokens in USD (0 = use input rate)
 }
 
 // ModelPricing represents pricing information for a model, with optional overrides for aliases.
@@ -555,6 +559,16 @@ func parseModelPricing(pricingData interface{}) (*ModelPricing, error) {
 			} else if out, ok := tierMap["output"].(int); ok {
 				tier.Output = float64(out)
 			}
+			if ci, ok := tierMap["cached_input"].(float64); ok {
+				tier.CachedInput = ci
+			} else if ci, ok := tierMap["cached_input"].(int); ok {
+				tier.CachedInput = float64(ci)
+			}
+			if cci, ok := tierMap["cache_creation_input"].(float64); ok {
+				tier.CacheCreationInput = cci
+			} else if cci, ok := tierMap["cache_creation_input"].(int); ok {
+				tier.CacheCreationInput = float64(cci)
+			}
 			mp.Tiers = append(mp.Tiers, tier)
 		}
 	case map[string]interface{}:
@@ -583,6 +597,16 @@ func parseModelPricing(pricingData interface{}) (*ModelPricing, error) {
 				} else if out, ok := tierMap["output"].(int); ok {
 					tier.Output = float64(out)
 				}
+				if ci, ok := tierMap["cached_input"].(float64); ok {
+					tier.CachedInput = ci
+				} else if ci, ok := tierMap["cached_input"].(int); ok {
+					tier.CachedInput = float64(ci)
+				}
+				if cci, ok := tierMap["cache_creation_input"].(float64); ok {
+					tier.CacheCreationInput = cci
+				} else if cci, ok := tierMap["cache_creation_input"].(int); ok {
+					tier.CacheCreationInput = float64(cci)
+				}
 				mp.Tiers = append(mp.Tiers, tier)
 			}
 		} else if _, ok := v["input"]; ok {
@@ -597,6 +621,16 @@ func parseModelPricing(pricingData interface{}) (*ModelPricing, error) {
 				tier.Output = out
 			} else if out, ok := v["output"].(int); ok {
 				tier.Output = float64(out)
+			}
+			if ci, ok := v["cached_input"].(float64); ok {
+				tier.CachedInput = ci
+			} else if ci, ok := v["cached_input"].(int); ok {
+				tier.CachedInput = float64(ci)
+			}
+			if cci, ok := v["cache_creation_input"].(float64); ok {
+				tier.CacheCreationInput = cci
+			} else if cci, ok := v["cache_creation_input"].(int); ok {
+				tier.CacheCreationInput = float64(cci)
 			}
 			mp.Tiers = []PricingTier{tier}
 		}
@@ -615,6 +649,16 @@ func parseModelPricing(pricingData interface{}) (*ModelPricing, error) {
 					pricing.Output = out
 				} else if out, ok := overrideMap["output"].(int); ok {
 					pricing.Output = float64(out)
+				}
+				if ci, ok := overrideMap["cached_input"].(float64); ok {
+					pricing.CachedInput = ci
+				} else if ci, ok := overrideMap["cached_input"].(int); ok {
+					pricing.CachedInput = float64(ci)
+				}
+				if cci, ok := overrideMap["cache_creation_input"].(float64); ok {
+					pricing.CacheCreationInput = cci
+				} else if cci, ok := overrideMap["cache_creation_input"].(int); ok {
+					pricing.CacheCreationInput = float64(cci)
 				}
 				mp.Overrides[alias] = pricing
 			}
@@ -684,7 +728,12 @@ func (c *YAMLConfig) GetModelPricing(provider, model string, inputTokens int) (*
 
 		for _, tier := range modelPricing.Tiers {
 			if tier.Threshold == 0 || inputTokens <= tier.Threshold {
-				return &Pricing{Input: tier.Input, Output: tier.Output}, nil
+				return &Pricing{
+					Input:              tier.Input,
+					Output:             tier.Output,
+					CachedInput:        tier.CachedInput,
+					CacheCreationInput: tier.CacheCreationInput,
+				}, nil
 			}
 		}
 	}

@@ -378,5 +378,169 @@ func TestAnthropic_TokenRateLimit_KeyLimited_UserOK(t *testing.T) {
 	}
 }
 
-// Verify rate limit headers for token-based key scope denial via middleware
-// ... existing code ...
+// =============================================================================
+// Cached token parsing tests
+// =============================================================================
+
+// TestAnthropicNonStreamingCachedTokenParsing tests that cache_read_input_tokens
+// and cache_creation_input_tokens are correctly parsed from non-streaming responses.
+func TestAnthropicNonStreamingCachedTokenParsing(t *testing.T) {
+	proxy := NewAnthropicProxy()
+
+	mockResponse := `{
+		"id": "msg_cache_test",
+		"type": "message",
+		"role": "assistant",
+		"content": [{"type": "text", "text": "Hello!"}],
+		"model": "claude-sonnet-4-20250514",
+		"stop_reason": "end_turn",
+		"stop_sequence": null,
+		"usage": {
+			"input_tokens": 2000,
+			"output_tokens": 150,
+			"cache_read_input_tokens": 1800,
+			"cache_creation_input_tokens": 100
+		}
+	}`
+
+	metadata, err := proxy.parseNonStreamingResponse(strings.NewReader(mockResponse))
+	if err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if metadata.InputTokens != 2000 {
+		t.Errorf("Expected 2000 input tokens, got %d", metadata.InputTokens)
+	}
+	if metadata.OutputTokens != 150 {
+		t.Errorf("Expected 150 output tokens, got %d", metadata.OutputTokens)
+	}
+	if metadata.TotalTokens != 2150 {
+		t.Errorf("Expected 2150 total tokens, got %d", metadata.TotalTokens)
+	}
+	if metadata.CachedInputTokens != 1800 {
+		t.Errorf("Expected 1800 cached input tokens, got %d", metadata.CachedInputTokens)
+	}
+	if metadata.CacheCreationInputTokens != 100 {
+		t.Errorf("Expected 100 cache creation input tokens, got %d", metadata.CacheCreationInputTokens)
+	}
+}
+
+// TestAnthropicNonStreamingNoCachedTokens verifies that responses without
+// cached token fields parse correctly with zero values (backward compatible).
+func TestAnthropicNonStreamingNoCachedTokens(t *testing.T) {
+	proxy := NewAnthropicProxy()
+
+	mockResponse := `{
+		"id": "msg_no_cache",
+		"type": "message",
+		"role": "assistant",
+		"content": [{"type": "text", "text": "Hi"}],
+		"model": "claude-sonnet-4-20250514",
+		"stop_reason": "end_turn",
+		"usage": {
+			"input_tokens": 500,
+			"output_tokens": 50
+		}
+	}`
+
+	metadata, err := proxy.parseNonStreamingResponse(strings.NewReader(mockResponse))
+	if err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if metadata.CachedInputTokens != 0 {
+		t.Errorf("Expected 0 cached input tokens, got %d", metadata.CachedInputTokens)
+	}
+	if metadata.CacheCreationInputTokens != 0 {
+		t.Errorf("Expected 0 cache creation input tokens, got %d", metadata.CacheCreationInputTokens)
+	}
+}
+
+// TestAnthropicStreamingCachedTokenParsing tests that cache tokens are correctly
+// extracted from the message_start event in streaming responses and propagated
+// through to the final metadata at message_stop.
+func TestAnthropicStreamingCachedTokenParsing(t *testing.T) {
+	proxy := NewAnthropicProxy()
+
+	mockStream := `event: message_start
+data: {"type": "message_start", "message": {"id": "msg_stream_cache", "type": "message", "role": "assistant", "content": [], "model": "claude-sonnet-4-20250514", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 5000, "output_tokens": 1, "cache_read_input_tokens": 4500, "cache_creation_input_tokens": 200}}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Cached response"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 30}}
+
+event: message_stop
+data: {"type": "message_stop"}
+`
+
+	metadata, err := proxy.ParseResponseMetadata(strings.NewReader(mockStream), true)
+	if err != nil {
+		t.Fatalf("Failed to parse streaming response: %v", err)
+	}
+
+	if metadata.InputTokens != 5000 {
+		t.Errorf("Expected 5000 input tokens, got %d", metadata.InputTokens)
+	}
+	// output = 1 (message_start) + 30 (message_delta)
+	if metadata.OutputTokens != 31 {
+		t.Errorf("Expected 31 output tokens, got %d", metadata.OutputTokens)
+	}
+	if metadata.CachedInputTokens != 4500 {
+		t.Errorf("Expected 4500 cached input tokens, got %d", metadata.CachedInputTokens)
+	}
+	if metadata.CacheCreationInputTokens != 200 {
+		t.Errorf("Expected 200 cache creation input tokens, got %d", metadata.CacheCreationInputTokens)
+	}
+	if metadata.IsStreaming != true {
+		t.Errorf("Expected IsStreaming true, got %v", metadata.IsStreaming)
+	}
+	if metadata.FinishReason != "end_turn" {
+		t.Errorf("Expected finish reason 'end_turn', got %s", metadata.FinishReason)
+	}
+}
+
+// TestAnthropicStreamingCacheReadOnly tests a response that only has
+// cache_read_input_tokens (no cache creation) — the common case for
+// subsequent turns in a conversation.
+func TestAnthropicStreamingCacheReadOnly(t *testing.T) {
+	proxy := NewAnthropicProxy()
+
+	mockStream := `event: message_start
+data: {"type": "message_start", "message": {"id": "msg_read_only", "type": "message", "role": "assistant", "content": [], "model": "claude-sonnet-4-20250514", "stop_reason": null, "usage": {"input_tokens": 3000, "output_tokens": 1, "cache_read_input_tokens": 2800}}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "OK"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 10}}
+
+event: message_stop
+data: {"type": "message_stop"}
+`
+
+	metadata, err := proxy.ParseResponseMetadata(strings.NewReader(mockStream), true)
+	if err != nil {
+		t.Fatalf("Failed to parse streaming response: %v", err)
+	}
+
+	if metadata.CachedInputTokens != 2800 {
+		t.Errorf("Expected 2800 cached input tokens, got %d", metadata.CachedInputTokens)
+	}
+	if metadata.CacheCreationInputTokens != 0 {
+		t.Errorf("Expected 0 cache creation input tokens, got %d", metadata.CacheCreationInputTokens)
+	}
+}

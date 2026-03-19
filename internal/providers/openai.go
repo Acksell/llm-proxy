@@ -213,9 +213,10 @@ type OpenAIResponse struct {
 
 // OpenAIUsage represents token usage in OpenAI responses
 type OpenAIUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int                 `json:"prompt_tokens"`
+	CompletionTokens    int                 `json:"completion_tokens"`
+	TotalTokens         int                 `json:"total_tokens"`
+	PromptTokensDetails *OpenAITokenDetails `json:"prompt_tokens_details,omitempty"`
 }
 
 // OpenAIChoice represents a choice in OpenAI responses
@@ -375,6 +376,11 @@ func (o *OpenAIProxy) parseNonStreamingResponse(responseBody io.Reader) (*LLMRes
 		Provider:     "openai",
 		RequestID:    response.ID,
 		IsStreaming:  false,
+	}
+
+	// Extract cached tokens from prompt_tokens_details
+	if response.Usage.PromptTokensDetails != nil {
+		metadata.CachedInputTokens = response.Usage.PromptTokensDetails.CachedTokens
 	}
 
 	// Extract finish reason from the first choice if available
@@ -552,6 +558,7 @@ func (o *OpenAIProxy) parseResponsesStreamingChunk(jsonData string, model, reque
 					outputTokens := 0
 					totalTokens := 0
 					reasoningTokens := 0
+					cachedTokens := 0
 
 					if inputVal, ok := usageField["input_tokens"].(float64); ok {
 						inputTokens = int(inputVal)
@@ -565,6 +572,11 @@ func (o *OpenAIProxy) parseResponsesStreamingChunk(jsonData string, model, reque
 					if outputDetails, ok := usageField["output_tokens_details"].(map[string]interface{}); ok {
 						if reasoningVal, ok := outputDetails["reasoning_tokens"].(float64); ok {
 							reasoningTokens = int(reasoningVal)
+						}
+					}
+					if inputDetails, ok := usageField["input_tokens_details"].(map[string]interface{}); ok {
+						if cachedVal, ok := inputDetails["cached_tokens"].(float64); ok {
+							cachedTokens = int(cachedVal)
 						}
 					}
 
@@ -586,15 +598,16 @@ func (o *OpenAIProxy) parseResponsesStreamingChunk(jsonData string, model, reque
 						}
 
 						metadata := &LLMResponseMetadata{
-							Model:         model,
-							InputTokens:   inputTokens,
-							OutputTokens:  outputTokens,
-							TotalTokens:   totalTokens,
-							Provider:      "openai",
-							RequestID:     requestID,
-							IsStreaming:   true,
-							FinishReason:  finishReason,
-							ThoughtTokens: reasoningTokens,
+							Model:             model,
+							InputTokens:       inputTokens,
+							OutputTokens:      outputTokens,
+							TotalTokens:       totalTokens,
+							CachedInputTokens: cachedTokens,
+							Provider:          "openai",
+							RequestID:         requestID,
+							IsStreaming:       true,
+							FinishReason:      finishReason,
+							ThoughtTokens:     reasoningTokens,
 						}
 						thoughtTokens = reasoningTokens
 						return metadata, model, requestID, finishReason, thoughtTokens
@@ -641,20 +654,25 @@ func (o *OpenAIProxy) parseResponsesStreamingChunk(jsonData string, model, reque
 		if event.Usage.OutputTokensDetails != nil {
 			reasoningTokens = event.Usage.OutputTokensDetails.ReasoningTokens
 		}
+		cachedTokens := 0
+		if event.Usage.InputTokensDetails != nil {
+			cachedTokens = event.Usage.InputTokensDetails.CachedTokens
+		}
 
-		log.Printf("🔄 OpenAI Responses API: Found usage data! Input: %d, Output: %d, Total: %d, Reasoning: %d",
-			event.Usage.InputTokens, event.Usage.OutputTokens, event.Usage.TotalTokens, reasoningTokens)
+		log.Printf("🔄 OpenAI Responses API: Found usage data! Input: %d, Output: %d, Total: %d, Reasoning: %d, Cached: %d",
+			event.Usage.InputTokens, event.Usage.OutputTokens, event.Usage.TotalTokens, reasoningTokens, cachedTokens)
 
 		metadata = &LLMResponseMetadata{
-			Model:         model,
-			InputTokens:   event.Usage.InputTokens,
-			OutputTokens:  event.Usage.OutputTokens,
-			TotalTokens:   event.Usage.TotalTokens,
-			Provider:      "openai",
-			RequestID:     requestID,
-			IsStreaming:   true,
-			FinishReason:  finishReason,
-			ThoughtTokens: reasoningTokens,
+			Model:             model,
+			InputTokens:       event.Usage.InputTokens,
+			OutputTokens:      event.Usage.OutputTokens,
+			TotalTokens:       event.Usage.TotalTokens,
+			CachedInputTokens: cachedTokens,
+			Provider:          "openai",
+			RequestID:         requestID,
+			IsStreaming:       true,
+			FinishReason:      finishReason,
+			ThoughtTokens:     reasoningTokens,
 		}
 		thoughtTokens = reasoningTokens
 	}
@@ -691,17 +709,22 @@ func (o *OpenAIProxy) parseCompletionsStreamingChunk(jsonData string, model, req
 
 	// The usage information is typically in the last chunk
 	if streamResponse.Usage != nil {
-		log.Printf("🔄 OpenAI: Found usage data! Input: %d, Output: %d, Total: %d",
-			streamResponse.Usage.PromptTokens, streamResponse.Usage.CompletionTokens, streamResponse.Usage.TotalTokens)
+		cachedTokens := 0
+		if streamResponse.Usage.PromptTokensDetails != nil {
+			cachedTokens = streamResponse.Usage.PromptTokensDetails.CachedTokens
+		}
+		log.Printf("🔄 OpenAI: Found usage data! Input: %d, Output: %d, Total: %d, Cached: %d",
+			streamResponse.Usage.PromptTokens, streamResponse.Usage.CompletionTokens, streamResponse.Usage.TotalTokens, cachedTokens)
 		metadata = &LLMResponseMetadata{
-			Model:        model,
-			InputTokens:  streamResponse.Usage.PromptTokens,
-			OutputTokens: streamResponse.Usage.CompletionTokens,
-			TotalTokens:  streamResponse.Usage.TotalTokens,
-			Provider:     "openai",
-			RequestID:    requestID,
-			IsStreaming:  true,
-			FinishReason: finishReason,
+			Model:             model,
+			InputTokens:       streamResponse.Usage.PromptTokens,
+			OutputTokens:      streamResponse.Usage.CompletionTokens,
+			TotalTokens:       streamResponse.Usage.TotalTokens,
+			CachedInputTokens: cachedTokens,
+			Provider:          "openai",
+			RequestID:         requestID,
+			IsStreaming:       true,
+			FinishReason:      finishReason,
 		}
 	}
 
@@ -740,16 +763,21 @@ func (o *OpenAIProxy) parseResponsesNonStreamingResponse(responseBody io.Reader)
 	if response.Usage.OutputTokensDetails != nil {
 		reasoningTokens = response.Usage.OutputTokensDetails.ReasoningTokens
 	}
+	cachedTokens := 0
+	if response.Usage.InputTokensDetails != nil {
+		cachedTokens = response.Usage.InputTokensDetails.CachedTokens
+	}
 
 	metadata := &LLMResponseMetadata{
-		Model:         response.Model,
-		InputTokens:   response.Usage.InputTokens,
-		OutputTokens:  outputTokens,
-		TotalTokens:   response.Usage.TotalTokens,
-		Provider:      "openai",
-		RequestID:     response.ID,
-		IsStreaming:   false,
-		ThoughtTokens: reasoningTokens,
+		Model:             response.Model,
+		InputTokens:       response.Usage.InputTokens,
+		OutputTokens:      outputTokens,
+		TotalTokens:       response.Usage.TotalTokens,
+		CachedInputTokens: cachedTokens,
+		Provider:          "openai",
+		RequestID:         response.ID,
+		IsStreaming:       false,
+		ThoughtTokens:     reasoningTokens,
 	}
 
 	// Extract finish reason from the output if available

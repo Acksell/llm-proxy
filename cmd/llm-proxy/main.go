@@ -317,22 +317,33 @@ func initializeCostTracker(yamlConfig *config.YAMLConfig) *cost.CostTracker {
 				var costTrackerPricing cost.ModelPricing
 				for _, tier := range modelPricing.Tiers {
 					costTrackerPricing.Tiers = append(costTrackerPricing.Tiers, cost.PricingTier{
-						Threshold: tier.Threshold,
-						Input:     tier.Input,
-						Output:    tier.Output,
+						Threshold:          tier.Threshold,
+						Input:              tier.Input,
+						Output:             tier.Output,
+						CachedInput:        tier.CachedInput,
+						CacheCreationInput: tier.CacheCreationInput,
 					})
 				}
 
 				if modelPricing.Overrides != nil {
 					costTrackerPricing.Overrides = make(map[string]struct {
-						Input  float64 `json:"input"`
-						Output float64 `json:"output"`
+						Input              float64 `json:"input"`
+						Output             float64 `json:"output"`
+						CachedInput        float64 `json:"cached_input,omitempty"`
+						CacheCreationInput float64 `json:"cache_creation_input,omitempty"`
 					})
 					for alias, override := range modelPricing.Overrides {
 						costTrackerPricing.Overrides[alias] = struct {
-							Input  float64 `json:"input"`
-							Output float64 `json:"output"`
-						}{Input: override.Input, Output: override.Output}
+							Input              float64 `json:"input"`
+							Output             float64 `json:"output"`
+							CachedInput        float64 `json:"cached_input,omitempty"`
+							CacheCreationInput float64 `json:"cache_creation_input,omitempty"`
+						}{
+							Input:              override.Input,
+							Output:             override.Output,
+							CachedInput:        override.CachedInput,
+							CacheCreationInput: override.CacheCreationInput,
+						}
 					}
 				}
 

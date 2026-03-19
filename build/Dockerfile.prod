@@ -30,6 +30,7 @@ RUN go mod download && go mod verify
 COPY cmd/ cmd/
 COPY internal/ internal/
 COPY configs/ configs/
+COPY pkg/ pkg/
 
 # Build optimizations for production
 ENV CGO_ENABLED=0 \

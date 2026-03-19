@@ -173,6 +173,18 @@ func (dt *DatadogTransport) WriteRecord(record *CostRecord) error {
 		dt.logger.Warn("💹 Failed to send total tokens metric to Datadog", "error", err)
 	}
 
+	if record.CachedInputTokens > 0 {
+		if err := dt.client.Distribution("tokens.cached_input", float64(record.CachedInputTokens), tags, 1.0); err != nil {
+			dt.logger.Warn("💹 Failed to send cached input tokens metric to Datadog", "error", err)
+		}
+	}
+
+	if record.CacheCreationInputTokens > 0 {
+		if err := dt.client.Distribution("tokens.cache_creation_input", float64(record.CacheCreationInputTokens), tags, 1.0); err != nil {
+			dt.logger.Warn("💹 Failed to send cache creation input tokens metric to Datadog", "error", err)
+		}
+	}
+
 	// Send cost metrics (convert to cents to avoid floating point precision issues in Datadog)
 	inputCostCents := float64(math.Ceil(record.InputCost * 100))
 	outputCostCents := float64(math.Ceil(record.OutputCost * 100))
@@ -188,6 +200,20 @@ func (dt *DatadogTransport) WriteRecord(record *CostRecord) error {
 
 	if err := dt.client.Distribution("cost.total_cents", totalCostCents, tags, 1.0); err != nil {
 		dt.logger.Warn("💹 Failed to send total cost metric to Datadog", "error", err)
+	}
+
+	if record.CachedInputCost > 0 {
+		cachedInputCostCents := float64(math.Ceil(record.CachedInputCost * 100))
+		if err := dt.client.Distribution("cost.cached_input_cents", cachedInputCostCents, tags, 1.0); err != nil {
+			dt.logger.Warn("💹 Failed to send cached input cost metric to Datadog", "error", err)
+		}
+	}
+
+	if record.CacheCreationInputCost > 0 {
+		cacheCreationInputCostCents := float64(math.Ceil(record.CacheCreationInputCost * 100))
+		if err := dt.client.Distribution("cost.cache_creation_input_cents", cacheCreationInputCostCents, tags, 1.0); err != nil {
+			dt.logger.Warn("💹 Failed to send cache creation input cost metric to Datadog", "error", err)
+		}
 	}
 
 	// Send request count metric

@@ -52,30 +52,34 @@ type DynamoDBTransport struct {
 
 // DynamoDBCostRecord represents a cost record as stored in DynamoDB
 type DynamoDBCostRecord struct {
-	PK           string  `dynamodbav:"pk"`        // Partition key: "COST#YYYY-MM-DD"
-	SK           string  `dynamodbav:"sk"`        // Sort key: "TIMESTAMP#requestId"
-	GSI1PK       string  `dynamodbav:"gsi1pk"`    // ProviderModelIndex partition key: "PROVIDER#providerName"
-	GSI1SK       string  `dynamodbav:"gsi1sk"`    // ProviderModelIndex sort key: "MODEL#modelName#TIMESTAMP"
-	GSI2PK       string  `dynamodbav:"gsi2pk"`    // UserProviderIndex partition key: "USER#userID"
-	GSI2SK       string  `dynamodbav:"gsi2sk"`    // UserProviderIndex sort key: "PROVIDER#providerName#TIMESTAMP"
-	GSI3PK       string  `dynamodbav:"gsi3pk"`    // ModelProviderIndex partition key: "MODEL#modelName"
-	GSI3SK       string  `dynamodbav:"gsi3sk"`    // ModelProviderIndex sort key: "PROVIDER#providerName#TIMESTAMP"
-	TTL          int64   `dynamodbav:"ttl"`       // TTL for automatic cleanup (optional)
-	Timestamp    int64   `dynamodbav:"timestamp"` // Unix timestamp for easier queries
-	RequestID    string  `dynamodbav:"request_id,omitempty"`
-	UserID       string  `dynamodbav:"user_id,omitempty"`
-	IPAddress    string  `dynamodbav:"ip_address,omitempty"`
-	Provider     string  `dynamodbav:"provider"`
-	Model        string  `dynamodbav:"model"`
-	Endpoint     string  `dynamodbav:"endpoint"`
-	IsStreaming  bool    `dynamodbav:"is_streaming"`
-	InputTokens  int     `dynamodbav:"input_tokens"`
-	OutputTokens int     `dynamodbav:"output_tokens"`
-	TotalTokens  int     `dynamodbav:"total_tokens"`
-	InputCost    float64 `dynamodbav:"input_cost"`
-	OutputCost   float64 `dynamodbav:"output_cost"`
-	TotalCost    float64 `dynamodbav:"total_cost"`
-	FinishReason string  `dynamodbav:"finish_reason,omitempty"`
+	PK                       string  `dynamodbav:"pk"`        // Partition key: "COST#YYYY-MM-DD"
+	SK                       string  `dynamodbav:"sk"`        // Sort key: "TIMESTAMP#requestId"
+	GSI1PK                   string  `dynamodbav:"gsi1pk"`    // ProviderModelIndex partition key: "PROVIDER#providerName"
+	GSI1SK                   string  `dynamodbav:"gsi1sk"`    // ProviderModelIndex sort key: "MODEL#modelName#TIMESTAMP"
+	GSI2PK                   string  `dynamodbav:"gsi2pk"`    // UserProviderIndex partition key: "USER#userID"
+	GSI2SK                   string  `dynamodbav:"gsi2sk"`    // UserProviderIndex sort key: "PROVIDER#providerName#TIMESTAMP"
+	GSI3PK                   string  `dynamodbav:"gsi3pk"`    // ModelProviderIndex partition key: "MODEL#modelName"
+	GSI3SK                   string  `dynamodbav:"gsi3sk"`    // ModelProviderIndex sort key: "PROVIDER#providerName#TIMESTAMP"
+	TTL                      int64   `dynamodbav:"ttl"`       // TTL for automatic cleanup (optional)
+	Timestamp                int64   `dynamodbav:"timestamp"` // Unix timestamp for easier queries
+	RequestID                string  `dynamodbav:"request_id,omitempty"`
+	UserID                   string  `dynamodbav:"user_id,omitempty"`
+	IPAddress                string  `dynamodbav:"ip_address,omitempty"`
+	Provider                 string  `dynamodbav:"provider"`
+	Model                    string  `dynamodbav:"model"`
+	Endpoint                 string  `dynamodbav:"endpoint"`
+	IsStreaming              bool    `dynamodbav:"is_streaming"`
+	InputTokens              int     `dynamodbav:"input_tokens"`
+	OutputTokens             int     `dynamodbav:"output_tokens"`
+	TotalTokens              int     `dynamodbav:"total_tokens"`
+	CachedInputTokens        int     `dynamodbav:"cached_input_tokens,omitempty"`
+	CacheCreationInputTokens int     `dynamodbav:"cache_creation_input_tokens,omitempty"`
+	InputCost                float64 `dynamodbav:"input_cost"`
+	OutputCost               float64 `dynamodbav:"output_cost"`
+	CachedInputCost          float64 `dynamodbav:"cached_input_cost,omitempty"`
+	CacheCreationInputCost   float64 `dynamodbav:"cache_creation_input_cost,omitempty"`
+	TotalCost                float64 `dynamodbav:"total_cost"`
+	FinishReason             string  `dynamodbav:"finish_reason,omitempty"`
 }
 
 // NewDynamoDBTransport creates a new DynamoDB-based transport
@@ -383,30 +387,34 @@ func (dt *DynamoDBTransport) toDynamoDBRecord(record *CostRecord) *DynamoDBCostR
 	timestampStr := record.Timestamp.Format("2006-01-02T15:04:05.000Z")
 
 	return &DynamoDBCostRecord{
-		PK:           fmt.Sprintf("COST#%s", dateStr),
-		SK:           fmt.Sprintf("TIMESTAMP#%s#%s", timestampStr, record.RequestID),
-		GSI1PK:       fmt.Sprintf("PROVIDER#%s", record.Provider),
-		GSI1SK:       fmt.Sprintf("MODEL#%s#%s", record.Model, timestampStr),
-		GSI2PK:       fmt.Sprintf("USER#%s", record.UserID),
-		GSI2SK:       fmt.Sprintf("PROVIDER#%s#%s", record.Provider, timestampStr),
-		GSI3PK:       fmt.Sprintf("MODEL#%s", record.Model),
-		GSI3SK:       fmt.Sprintf("PROVIDER#%s#%s", record.Provider, timestampStr),
-		TTL:          record.Timestamp.AddDate(1, 0, 0).Unix(), // 1 year TTL
-		Timestamp:    record.Timestamp.Unix(),
-		RequestID:    record.RequestID,
-		UserID:       record.UserID,
-		IPAddress:    record.IPAddress,
-		Provider:     record.Provider,
-		Model:        record.Model,
-		Endpoint:     record.Endpoint,
-		IsStreaming:  record.IsStreaming,
-		InputTokens:  record.InputTokens,
-		OutputTokens: record.OutputTokens,
-		TotalTokens:  record.TotalTokens,
-		InputCost:    record.InputCost,
-		OutputCost:   record.OutputCost,
-		TotalCost:    record.TotalCost,
-		FinishReason: record.FinishReason,
+		PK:                       fmt.Sprintf("COST#%s", dateStr),
+		SK:                       fmt.Sprintf("TIMESTAMP#%s#%s", timestampStr, record.RequestID),
+		GSI1PK:                   fmt.Sprintf("PROVIDER#%s", record.Provider),
+		GSI1SK:                   fmt.Sprintf("MODEL#%s#%s", record.Model, timestampStr),
+		GSI2PK:                   fmt.Sprintf("USER#%s", record.UserID),
+		GSI2SK:                   fmt.Sprintf("PROVIDER#%s#%s", record.Provider, timestampStr),
+		GSI3PK:                   fmt.Sprintf("MODEL#%s", record.Model),
+		GSI3SK:                   fmt.Sprintf("PROVIDER#%s#%s", record.Provider, timestampStr),
+		TTL:                      record.Timestamp.AddDate(1, 0, 0).Unix(), // 1 year TTL
+		Timestamp:                record.Timestamp.Unix(),
+		RequestID:                record.RequestID,
+		UserID:                   record.UserID,
+		IPAddress:                record.IPAddress,
+		Provider:                 record.Provider,
+		Model:                    record.Model,
+		Endpoint:                 record.Endpoint,
+		IsStreaming:              record.IsStreaming,
+		InputTokens:              record.InputTokens,
+		OutputTokens:             record.OutputTokens,
+		TotalTokens:              record.TotalTokens,
+		CachedInputTokens:        record.CachedInputTokens,
+		CacheCreationInputTokens: record.CacheCreationInputTokens,
+		InputCost:                record.InputCost,
+		OutputCost:               record.OutputCost,
+		CachedInputCost:          record.CachedInputCost,
+		CacheCreationInputCost:   record.CacheCreationInputCost,
+		TotalCost:                record.TotalCost,
+		FinishReason:             record.FinishReason,
 	}
 }
 
