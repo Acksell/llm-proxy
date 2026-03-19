@@ -318,6 +318,45 @@ func TestClientUpdateKeyTags(t *testing.T) {
 	}
 }
 
+func TestClientGetUsageNoCostReader(t *testing.T) {
+	client, _ := setupServer(t) // setupServer passes nil costReader
+	ctx := context.Background()
+
+	_, err := client.GetUsage(ctx, "user-123", &admin.GetUsageOptions{
+		From: "2025-01-01",
+		To:   "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error when cost reader is nil")
+	}
+
+	var apiErr *admin.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *admin.Error, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != 501 {
+		t.Fatalf("expected 501, got %d", apiErr.StatusCode)
+	}
+}
+
+func TestClientGetUsageMissingUserID(t *testing.T) {
+	client, _ := setupServer(t)
+	ctx := context.Background()
+
+	_, err := client.GetUsage(ctx, "", nil)
+	if err == nil {
+		t.Fatal("expected error for empty user_id")
+	}
+
+	var apiErr *admin.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *admin.Error, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != 400 {
+		t.Fatalf("expected 400, got %d", apiErr.StatusCode)
+	}
+}
+
 // TestClientFullLifecycle tests the complete CRUD lifecycle through the client.
 func TestClientFullLifecycle(t *testing.T) {
 	client, _ := setupServer(t)

@@ -81,6 +81,32 @@ func (c *Client) DeleteKey(ctx context.Context, key string) error {
 	return c.do(ctx, http.MethodDelete, "/admin/keys/"+key, nil, nil)
 }
 
+// GetUsageOptions are optional query parameters for GetUsage.
+// If From or To are empty the server defaults both to today's date.
+type GetUsageOptions struct {
+	From string // YYYY-MM-DD
+	To   string // YYYY-MM-DD
+}
+
+// GetUsage retrieves aggregated usage/cost data for a user.
+// The userID parameter is required. Options may be nil to accept server defaults.
+func (c *Client) GetUsage(ctx context.Context, userID string, opts *GetUsageOptions) (*UsageResponse, error) {
+	params := "user_id=" + userID
+	if opts != nil {
+		if opts.From != "" {
+			params += "&from=" + opts.From
+		}
+		if opts.To != "" {
+			params += "&to=" + opts.To
+		}
+	}
+	var resp UsageResponse
+	if err := c.do(ctx, http.MethodGet, "/admin/usage?"+params, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // do performs an HTTP request to the admin API.
 // If body is non-nil, it is JSON-encoded and sent as the request body.
 // If dest is non-nil, the response body is JSON-decoded into it.
