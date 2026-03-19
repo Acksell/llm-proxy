@@ -11,20 +11,25 @@ import (
 	admintypes "github.com/Instawork/llm-proxy/pkg/admin"
 
 	"github.com/Instawork/llm-proxy/internal/apikeys"
+	"github.com/Instawork/llm-proxy/internal/cost"
 	"github.com/gorilla/mux"
 )
 
 // Handler holds dependencies for the admin API.
 type Handler struct {
 	store       *apikeys.Store
+	costReader  cost.CostReader
 	adminAPIKey string
 	logger      *slog.Logger
 }
 
 // NewHandler creates a new admin API router with all routes registered.
-func NewHandler(store *apikeys.Store, adminAPIKey string, logger *slog.Logger) http.Handler {
+// costReader may be nil if cost tracking is not configured; the usage
+// endpoint will return 501 Not Implemented in that case.
+func NewHandler(store *apikeys.Store, costReader cost.CostReader, adminAPIKey string, logger *slog.Logger) http.Handler {
 	h := &Handler{
 		store:       store,
+		costReader:  costReader,
 		adminAPIKey: adminAPIKey,
 		logger:      logger,
 	}
@@ -42,6 +47,8 @@ func NewHandler(store *apikeys.Store, adminAPIKey string, logger *slog.Logger) h
 	sub.HandleFunc("/keys/{key}", h.handleGetKey).Methods("GET")
 	sub.HandleFunc("/keys/{key}", h.handleUpdateKey).Methods("PATCH")
 	sub.HandleFunc("/keys/{key}", h.handleDeleteKey).Methods("DELETE")
+
+	sub.HandleFunc("/usage", h.handleGetUsage).Methods("GET")
 
 	return r
 }
@@ -208,6 +215,84 @@ func (h *Handler) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Admin API: deleted key", "key", keyID)
 	writeJSON(w, http.StatusOK, admintypes.OKResponse{OK: true})
+}
+
+// --- Get Usage ---
+
+func (h *Handler) handleGetUsage(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user_id query parameter is required")
+		return
+	}
+
+	// Default date range: today only
+	now := time.Now().UTC()
+	from := r.URL.Query().Get("from")
+	if from == "" {
+		from = now.Format("2006-01-02")
+	}
+	to := r.URL.Query().Get("to")
+	if to == "" {
+		to = now.Format("2006-01-02")
+	}
+
+	// Validate date formats
+	if _, err := time.Parse("2006-01-02", from); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid 'from' date format, expected YYYY-MM-DD")
+		return
+	}
+	if _, err := time.Parse("2006-01-02", to); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid 'to' date format, expected YYYY-MM-DD")
+		return
+	}
+	if from > to {
+		writeError(w, http.StatusBadRequest, "'from' date must not be after 'to' date")
+		return
+	}
+
+	if h.costReader == nil {
+		writeError(w, http.StatusNotImplemented, "cost tracking is not configured")
+		return
+	}
+
+	aggregates, err := h.costReader.QueryUserCosts(r.Context(), userID, from, to)
+	if err != nil {
+		h.logger.Error("Failed to query user costs", "error", err, "user_id", userID)
+		writeError(w, http.StatusInternalServerError, "failed to query usage data")
+		return
+	}
+
+	// Build response with totals
+	resp := admintypes.UsageResponse{
+		UserID: userID,
+		From:   from,
+		To:     to,
+		Daily:  make([]admintypes.DailyUsage, 0, len(aggregates)),
+	}
+
+	for _, agg := range aggregates {
+		resp.TotalCost += agg.TotalCost
+		resp.InputCost += agg.InputCost
+		resp.OutputCost += agg.OutputCost
+		resp.InputTokens += agg.InputTokens
+		resp.OutputTokens += agg.OutputTokens
+		resp.TotalTokens += agg.TotalTokens
+		resp.RequestCount += agg.RequestCount
+
+		resp.Daily = append(resp.Daily, admintypes.DailyUsage{
+			Date:         agg.Date,
+			TotalCost:    agg.TotalCost,
+			InputCost:    agg.InputCost,
+			OutputCost:   agg.OutputCost,
+			InputTokens:  agg.InputTokens,
+			OutputTokens: agg.OutputTokens,
+			TotalTokens:  agg.TotalTokens,
+			RequestCount: agg.RequestCount,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Helpers ---

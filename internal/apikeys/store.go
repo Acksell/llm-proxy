@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/acksell/bezos/dynamodb/ddbiface"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -49,30 +49,23 @@ type APIKey struct {
 
 // Store handles API key storage in DynamoDB
 type Store struct {
-	client    *dynamodb.Client
+	client    ddbiface.Client
 	tableName string
 	logger    *slog.Logger
 }
 
 // StoreConfig holds configuration for the API key store
 type StoreConfig struct {
+	Client    ddbiface.Client
 	TableName string
-	Region    string
 	Logger    *slog.Logger
 }
 
 // NewStore creates a new API key store
 func NewStore(cfg StoreConfig) (*Store, error) {
-	// Load AWS configuration
-	awsConfig, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	if cfg.Client == nil {
+		return nil, fmt.Errorf("DynamoDB client is required")
 	}
-
-	// Create DynamoDB client
-	client := dynamodb.NewFromConfig(awsConfig)
 
 	logger := cfg.Logger
 	if logger == nil {
@@ -80,7 +73,7 @@ func NewStore(cfg StoreConfig) (*Store, error) {
 	}
 
 	store := &Store{
-		client:    client,
+		client:    cfg.Client,
 		tableName: cfg.TableName,
 		logger:    logger,
 	}

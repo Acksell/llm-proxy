@@ -34,7 +34,7 @@ func setupServer(t *testing.T) (*admin.Client, *httptest.Server) {
 		t.Fatalf("failed to create apikeys store: %v", err)
 	}
 
-	handler := internaladmin.NewHandler(keyStore, testAdminKey, slog.Default())
+	handler := internaladmin.NewHandler(keyStore, nil, testAdminKey, slog.Default())
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 

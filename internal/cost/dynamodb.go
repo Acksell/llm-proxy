@@ -6,25 +6,46 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/acksell/bezos/dynamodb/ddbiface"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	configPkg "github.com/Instawork/llm-proxy/internal/config"
+	ddb "github.com/Instawork/llm-proxy/internal/dynamodb"
 )
 
 // DynamoDBTransportConfig holds configuration for the DynamoDB transport
 type DynamoDBTransportConfig struct {
+	Client    ddbiface.Client
 	TableName string
-	Region    string
 	Logger    *slog.Logger
 }
 
-// DynamoDBTransport implements Transport interface for DynamoDB-based cost tracking
+// CostReader defines the interface for querying aggregated cost data
+type CostReader interface {
+	// QueryUserCosts returns daily aggregated cost records for a user within a date range.
+	// The from and to parameters are inclusive dates in "YYYY-MM-DD" format.
+	QueryUserCosts(ctx context.Context, userID, from, to string) ([]DailyAggregate, error)
+}
+
+// DailyAggregate represents a pre-aggregated daily cost summary for a user.
+type DailyAggregate struct {
+	UserID       string  `dynamodbav:"user_id" json:"user_id"`
+	Date         string  `dynamodbav:"date" json:"date"`
+	TotalCost    float64 `dynamodbav:"total_cost" json:"total_cost"`
+	InputCost    float64 `dynamodbav:"input_cost" json:"input_cost"`
+	OutputCost   float64 `dynamodbav:"output_cost" json:"output_cost"`
+	InputTokens  int     `dynamodbav:"input_tokens" json:"input_tokens"`
+	OutputTokens int     `dynamodbav:"output_tokens" json:"output_tokens"`
+	TotalTokens  int     `dynamodbav:"total_tokens" json:"total_tokens"`
+	RequestCount int     `dynamodbav:"request_count" json:"request_count"`
+}
+
+// DynamoDBTransport implements Transport and CostReader interfaces for DynamoDB-based cost tracking
 type DynamoDBTransport struct {
-	client    *dynamodb.Client
+	client    ddbiface.Client
 	tableName string
 	logger    *slog.Logger
 }
@@ -59,16 +80,9 @@ type DynamoDBCostRecord struct {
 
 // NewDynamoDBTransport creates a new DynamoDB-based transport
 func NewDynamoDBTransport(cfg DynamoDBTransportConfig) (*DynamoDBTransport, error) {
-	// Load AWS configuration
-	awsConfig, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	if cfg.Client == nil {
+		return nil, fmt.Errorf("DynamoDB client is required")
 	}
-
-	// Create DynamoDB client
-	client := dynamodb.NewFromConfig(awsConfig)
 
 	logger := cfg.Logger
 	if logger == nil {
@@ -76,7 +90,7 @@ func NewDynamoDBTransport(cfg DynamoDBTransportConfig) (*DynamoDBTransport, erro
 	}
 
 	transport := &DynamoDBTransport{
-		client:    client,
+		client:    cfg.Client,
 		tableName: cfg.TableName,
 		logger:    logger,
 	}
@@ -101,9 +115,14 @@ func (dt *DynamoDBTransport) FromConfig(transportConfig interface{}, logger *slo
 			"table_name", cfg.DynamoDB.TableName,
 			"region", cfg.DynamoDB.Region)
 
+		client, err := ddb.NewClient(cfg.DynamoDB.Region)
+		if err != nil {
+			return nil, err
+		}
+
 		config := DynamoDBTransportConfig{
+			Client:    client,
 			TableName: cfg.DynamoDB.TableName,
-			Region:    cfg.DynamoDB.Region,
 			Logger:    logger,
 		}
 		return NewDynamoDBTransport(config)
@@ -126,9 +145,14 @@ func (dt *DynamoDBTransport) FromConfig(transportConfig interface{}, logger *slo
 			"table_name", tableName,
 			"region", region)
 
+		client, err := ddb.NewClient(region)
+		if err != nil {
+			return nil, err
+		}
+
 		config := DynamoDBTransportConfig{
+			Client:    client,
 			TableName: tableName,
-			Region:    region,
 			Logger:    logger,
 		}
 		return NewDynamoDBTransport(config)
@@ -275,7 +299,9 @@ func (dt *DynamoDBTransport) ensureTableExists(ctx context.Context) error {
 	return nil
 }
 
-// WriteRecord writes a cost record to DynamoDB
+// WriteRecord writes a cost record and atomically updates the user's daily
+// aggregation counter using a DynamoDB transaction. This guarantees that the
+// detail record and the pre-aggregated counter are always consistent.
 func (dt *DynamoDBTransport) WriteRecord(record *CostRecord) error {
 	ctx := context.TODO()
 
@@ -288,10 +314,54 @@ func (dt *DynamoDBTransport) WriteRecord(record *CostRecord) error {
 		return fmt.Errorf("failed to marshal record: %w", err)
 	}
 
-	// Put item to DynamoDB
-	_, err = dt.client.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(dt.tableName),
-		Item:      item,
+	dateStr := record.Timestamp.Format("2006-01-02")
+	aggregatePK := fmt.Sprintf("USERCOST#%s", record.UserID)
+	aggregateSK := fmt.Sprintf("DAY#%s", dateStr)
+	ttl := record.Timestamp.AddDate(1, 0, 0).Unix()
+
+	// Build the transaction: Put detail record + Update aggregation counter
+	_, err = dt.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: []types.TransactWriteItem{
+			{
+				// 1. Insert the detailed cost record (same as before)
+				Put: &types.Put{
+					TableName: aws.String(dt.tableName),
+					Item:      item,
+				},
+			},
+			{
+				// 2. Atomically increment the user's daily aggregation counter
+				Update: &types.Update{
+					TableName: aws.String(dt.tableName),
+					Key: map[string]types.AttributeValue{
+						"pk": &types.AttributeValueMemberS{Value: aggregatePK},
+						"sk": &types.AttributeValueMemberS{Value: aggregateSK},
+					},
+					UpdateExpression: aws.String(
+						"ADD total_cost :tc, input_cost :ic, output_cost :oc, " +
+							"input_tokens :it, output_tokens :ot, total_tokens :tt, " +
+							"request_count :rc " +
+							"SET #uid = :uid, #d = :d, #ttl = :ttl"),
+					ExpressionAttributeNames: map[string]string{
+						"#uid": "user_id",
+						"#d":   "date",
+						"#ttl": "ttl",
+					},
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":tc":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%g", record.TotalCost)},
+						":ic":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%g", record.InputCost)},
+						":oc":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%g", record.OutputCost)},
+						":it":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", record.InputTokens)},
+						":ot":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", record.OutputTokens)},
+						":tt":  &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", record.TotalTokens)},
+						":rc":  &types.AttributeValueMemberN{Value: "1"},
+						":uid": &types.AttributeValueMemberS{Value: record.UserID},
+						":d":   &types.AttributeValueMemberS{Value: dateStr},
+						":ttl": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)},
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to write record to DynamoDB: %w", err)
@@ -301,7 +371,8 @@ func (dt *DynamoDBTransport) WriteRecord(record *CostRecord) error {
 		"table", dt.tableName,
 		"provider", record.Provider,
 		"model", record.Model,
-		"cost", record.TotalCost)
+		"cost", record.TotalCost,
+		"aggregate_user", record.UserID)
 
 	return nil
 }
@@ -337,4 +408,39 @@ func (dt *DynamoDBTransport) toDynamoDBRecord(record *CostRecord) *DynamoDBCostR
 		TotalCost:    record.TotalCost,
 		FinishReason: record.FinishReason,
 	}
+}
+
+// QueryUserCosts retrieves pre-aggregated daily cost records for a user within
+// an inclusive date range. The from/to parameters must be in "YYYY-MM-DD" format.
+// This queries the aggregation items written by WriteRecord's transaction,
+// so it returns results in O(days) items rather than O(requests).
+func (dt *DynamoDBTransport) QueryUserCosts(ctx context.Context, userID, from, to string) ([]DailyAggregate, error) {
+	pk := fmt.Sprintf("USERCOST#%s", userID)
+	skFrom := fmt.Sprintf("DAY#%s", from)
+	skTo := fmt.Sprintf("DAY#%s", to)
+
+	result, err := dt.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(dt.tableName),
+		KeyConditionExpression: aws.String("pk = :pk AND sk BETWEEN :from AND :to"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk":   &types.AttributeValueMemberS{Value: pk},
+			":from": &types.AttributeValueMemberS{Value: skFrom},
+			":to":   &types.AttributeValueMemberS{Value: skTo},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user costs: %w", err)
+	}
+
+	aggregates := make([]DailyAggregate, 0, len(result.Items))
+	for _, item := range result.Items {
+		var agg DailyAggregate
+		if err := attributevalue.UnmarshalMap(item, &agg); err != nil {
+			dt.logger.Warn("Failed to unmarshal aggregate record", "error", err)
+			continue
+		}
+		aggregates = append(aggregates, agg)
+	}
+
+	return aggregates, nil
 }

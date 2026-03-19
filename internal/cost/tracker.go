@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Instawork/llm-proxy/internal/config"
+	ddb "github.com/Instawork/llm-proxy/internal/dynamodb"
 	"github.com/Instawork/llm-proxy/internal/providers"
 	"github.com/hbollon/go-edlib"
 )
@@ -112,9 +113,13 @@ func NewFileBasedCostTracker(outputFile string) *CostTracker {
 
 // NewDynamoDBBasedCostTracker creates a new cost tracker with DynamoDB transport (convenience function)
 func NewDynamoDBBasedCostTracker(tableName, region string) (*CostTracker, error) {
+	client, err := ddb.NewClient(region)
+	if err != nil {
+		return nil, err
+	}
 	config := DynamoDBTransportConfig{
+		Client:    client,
 		TableName: tableName,
-		Region:    region,
 	}
 	transport, err := NewDynamoDBTransport(config)
 	if err != nil {

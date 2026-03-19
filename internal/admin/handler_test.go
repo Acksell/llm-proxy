@@ -18,6 +18,7 @@ const testAdminKey = "test-admin-secret"
 // setupHandler creates an admin handler backed by an in-memory DynamoDB store.
 func setupHandler(t *testing.T) http.Handler {
 	t.Helper()
+
 	store, err := ddbstore.New(ddbstore.StoreOptions{InMemory: true})
 	if err != nil {
 		t.Fatalf("failed to create in-memory ddb store: %v", err)
@@ -30,10 +31,11 @@ func setupHandler(t *testing.T) http.Handler {
 		Logger:    slog.Default(),
 	})
 	if err != nil {
-		t.Fatalf("failed to create apikeys store: %v", err)
+		t.Fatalf("Failed to create apikeys store: %v", err)
 	}
 
-	return NewHandler(keyStore, testAdminKey, slog.Default())
+	// Pass nil for costReader — usage endpoint will return 501 in tests
+	return NewHandler(keyStore, nil, testAdminKey, slog.Default())
 }
 
 func doRequest(t *testing.T, handler http.Handler, method, path string, body interface{}, auth string) *httptest.ResponseRecorder {
@@ -549,5 +551,44 @@ func TestResponseContentType(t *testing.T) {
 	ct := rr.Header().Get("Content-Type")
 	if ct != "application/json" {
 		t.Fatalf("expected Content-Type=application/json, got %s", ct)
+	}
+}
+
+// --- Usage endpoint (unit tests that don't require DynamoDB) ---
+
+func TestGetUsageNoCostReader(t *testing.T) {
+	// Create handler with nil costReader
+	h := NewHandler(nil, nil, testAdminKey, slog.Default())
+
+	rr := doRequest(t, h, "GET", "/admin/usage?user_id=foo", nil, "Bearer "+testAdminKey)
+	if rr.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501 when costReader is nil, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestGetUsageMissingUserID(t *testing.T) {
+	h := NewHandler(nil, nil, testAdminKey, slog.Default())
+
+	rr := doRequest(t, h, "GET", "/admin/usage", nil, "Bearer "+testAdminKey)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing user_id, got %d", rr.Code)
+	}
+}
+
+func TestGetUsageInvalidDateFormat(t *testing.T) {
+	h := NewHandler(nil, nil, testAdminKey, slog.Default())
+
+	rr := doRequest(t, h, "GET", "/admin/usage?user_id=foo&from=not-a-date", nil, "Bearer "+testAdminKey)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid date format, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestGetUsageRequiresAuth(t *testing.T) {
+	h := NewHandler(nil, nil, testAdminKey, slog.Default())
+
+	rr := doRequest(t, h, "GET", "/admin/usage?user_id=foo", nil, "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without auth, got %d", rr.Code)
 	}
 }

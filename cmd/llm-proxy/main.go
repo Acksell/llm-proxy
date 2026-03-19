@@ -17,6 +17,7 @@ import (
 	"github.com/Instawork/llm-proxy/internal/apikeys"
 	"github.com/Instawork/llm-proxy/internal/config"
 	"github.com/Instawork/llm-proxy/internal/cost"
+	ddb "github.com/Instawork/llm-proxy/internal/dynamodb"
 	"github.com/Instawork/llm-proxy/internal/middleware"
 	"github.com/Instawork/llm-proxy/internal/providers"
 	"github.com/Instawork/llm-proxy/internal/ratelimit"
@@ -374,9 +375,15 @@ func initializeAPIKeyStore(yamlConfig *config.YAMLConfig) providers.APIKeyStore 
 		"region", apiKeyConfig.Region)
 
 	// Create the API key store
+	ddbClient, err := ddb.NewClient(apiKeyConfig.Region)
+	if err != nil {
+		logger.Error("🔑 API Key Store: Failed to create DynamoDB client", "error", err)
+		return nil
+	}
+
 	store, err := apikeys.NewStore(apikeys.StoreConfig{
+		Client:    ddbClient,
 		TableName: apiKeyConfig.TableName,
-		Region:    apiKeyConfig.Region,
 		Logger:    logger,
 	})
 	if err != nil {

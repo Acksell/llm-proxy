@@ -54,3 +54,30 @@ func String(s string) *string     { return &s }
 func Bool(b bool) *bool           { return &b }
 func Int64(n int64) *int64        { return &n }
 func Time(t time.Time) *time.Time { return &t }
+
+// UsageResponse is the response body for GET /admin/usage.
+type UsageResponse struct {
+	UserID       string       `json:"user_id"`
+	From         string       `json:"from"`
+	To           string       `json:"to"`
+	TotalCost    float64      `json:"total_cost"`
+	InputCost    float64      `json:"input_cost"`
+	OutputCost   float64      `json:"output_cost"`
+	InputTokens  int          `json:"input_tokens"`
+	OutputTokens int          `json:"output_tokens"`
+	TotalTokens  int          `json:"total_tokens"`
+	RequestCount int          `json:"request_count"`
+	Daily        []DailyUsage `json:"daily"`
+}
+
+// DailyUsage represents aggregated usage for a single day.
+type DailyUsage struct {
+	Date         string  `json:"date"`
+	TotalCost    float64 `json:"total_cost"`
+	InputCost    float64 `json:"input_cost"`
+	OutputCost   float64 `json:"output_cost"`
+	InputTokens  int     `json:"input_tokens"`
+	OutputTokens int     `json:"output_tokens"`
+	TotalTokens  int     `json:"total_tokens"`
+	RequestCount int     `json:"request_count"`
+}
