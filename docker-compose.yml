@@ -27,7 +27,35 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - llm-proxy-network
+      - internal
+
+  llm-proxy-admin:
+    build:
+      context: .
+      dockerfile: build/Dockerfile
+    container_name: llm-proxy-admin-${ENVIRONMENT:-dev}
+    ports:
+      - "${ADMIN_PORT:-9003}:9003"
+    volumes:
+      - .:/app
+      - /app/bin
+    working_dir: /app
+    command: ["go", "run", "./cmd/llm-proxy-admin"]
+    environment:
+      - ADMIN_PORT=9003
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-dev-admin-key}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - CGO_ENABLED=0
+      - ENVIRONMENT=${ENVIRONMENT:-dev}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - internal
 
   # Datadog Agent for monitoring and metrics collection
   datadog-agent:
@@ -58,7 +86,7 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./logs:/var/log/llm-proxy:ro
     networks:
-      - llm-proxy-network
+      - internal
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "agent", "health"]
@@ -68,5 +96,5 @@ services:
       start_period: 40s
 
 networks:
-  llm-proxy-network:
+  internal:
     driver: bridge 

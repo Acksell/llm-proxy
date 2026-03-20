@@ -27,6 +27,28 @@ type Transport interface {
 	WriteRecord(record *CostRecord) error
 }
 
+// CostReader defines the interface for querying aggregated cost data.
+// A Transport may optionally implement this interface to support reading
+// cost data back (e.g. for admin usage endpoints).
+type CostReader interface {
+	// QueryUserCosts returns daily aggregated cost records for a user within a date range.
+	// The from and to parameters are inclusive dates in "YYYY-MM-DD" format.
+	QueryUserCosts(ctx context.Context, userID, from, to string) ([]DailyAggregate, error)
+}
+
+// DailyAggregate represents a pre-aggregated daily cost summary for a user.
+type DailyAggregate struct {
+	UserID       string  `dynamodbav:"user_id" json:"user_id"`
+	Date         string  `dynamodbav:"date" json:"date"`
+	TotalCost    float64 `dynamodbav:"total_cost" json:"total_cost"`
+	InputCost    float64 `dynamodbav:"input_cost" json:"input_cost"`
+	OutputCost   float64 `dynamodbav:"output_cost" json:"output_cost"`
+	InputTokens  int     `dynamodbav:"input_tokens" json:"input_tokens"`
+	OutputTokens int     `dynamodbav:"output_tokens" json:"output_tokens"`
+	TotalTokens  int     `dynamodbav:"total_tokens" json:"total_tokens"`
+	RequestCount int     `dynamodbav:"request_count" json:"request_count"`
+}
+
 // PricingTier represents a pricing tier with a token threshold.
 type PricingTier struct {
 	Threshold          int     `json:"threshold"`                      // The token threshold for this tier

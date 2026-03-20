@@ -64,34 +64,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create CostReader from cost tracking transport config (if DynamoDB is configured)
+	// Create CostReader from cost tracking transport config.
+	// Iterate configured transports and use the first one that implements CostReader.
 	var costReader cost.CostReader
 	for _, tc := range yamlConfig.GetAllTransports() {
-		if tc.Type == "dynamodb" && tc.DynamoDB != nil {
-			ddbClient, err := ddb.NewClient(tc.DynamoDB.Region)
-			if err != nil {
-				logger.Error("Failed to create DynamoDB client for cost tracking", "error", err)
-				os.Exit(1)
-			}
-			transport, err := cost.NewDynamoDBTransport(cost.DynamoDBTransportConfig{
-				Client:    ddbClient,
-				TableName: tc.DynamoDB.TableName,
-				Logger:    logger,
-			})
-			if err != nil {
-				logger.Error("Failed to create DynamoDB cost transport for reading", "error", err)
-				os.Exit(1)
-			}
-			costReader = transport
-			logger.Info("Cost reader configured",
-				"table", tc.DynamoDB.TableName,
-				"region", tc.DynamoDB.Region)
+		transport, err := cost.CreateTransportFromConfig(&tc, logger)
+		if err != nil {
+			logger.Warn("Failed to create transport", "type", tc.Type, "error", err)
+			continue
+		}
+		if cr, ok := transport.(cost.CostReader); ok {
+			costReader = cr
+			logger.Info("Cost reader configured", "type", tc.Type)
 			break
 		}
 	}
 
 	if costReader == nil {
-		logger.Warn("No DynamoDB cost transport configured; GET /admin/usage will return 501")
+		logger.Warn("No cost reader available; GET /admin/usage will return 501")
 	}
 
 	// Create admin handler

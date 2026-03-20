@@ -17,6 +17,10 @@ features:
       - type: "file"
         file:
           path: "./logs/cost-tracking.jsonl"
+      - type: "dynamodb"
+        dynamodb:
+          table_name: "llm-proxy-cost-tracking-dev"
+          region: "eu-north-1"
       - type: "datadog"
         datadog:
           host: "datadog-agent"
@@ -27,7 +31,7 @@ features:
   api_key_management:
     enabled: true
     table_name: "llm-proxy-api-keys-dev"
-    region: "us-west-2"
+    region: "eu-north-1"
   rate_limiting:
     enabled: true
     backend: "memory"
