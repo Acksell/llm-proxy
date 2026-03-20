@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/config"
+	"github.com/acksell/llm-proxy/internal/config"
 )
 
 func baseCfg() *config.YAMLConfig {

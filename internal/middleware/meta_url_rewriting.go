@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 // Context key for storing user ID extracted from meta URL

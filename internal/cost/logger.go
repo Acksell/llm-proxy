@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/Instawork/llm-proxy/internal/config"
+	"github.com/acksell/llm-proxy/internal/config"
 )
 
 // FileTransport implements Transport interface for file-based cost tracking

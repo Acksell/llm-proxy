@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 func TestMetaURLRewritingMiddleware_BasicRewriting(t *testing.T) {

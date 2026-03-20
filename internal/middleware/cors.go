@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 // CORSMiddleware adds CORS headers with streaming support

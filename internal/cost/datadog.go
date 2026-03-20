@@ -7,7 +7,7 @@ import (
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 
-	configPkg "github.com/Instawork/llm-proxy/internal/config"
+	configPkg "github.com/acksell/llm-proxy/internal/config"
 )
 
 // DatadogTransportConfig holds configuration for the Datadog transport

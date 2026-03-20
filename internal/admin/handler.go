@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	admintypes "github.com/Instawork/llm-proxy/pkg/admin"
+	admintypes "github.com/acksell/llm-proxy/pkg/admin"
 
-	"github.com/Instawork/llm-proxy/internal/apikeys"
-	"github.com/Instawork/llm-proxy/internal/cost"
+	"github.com/acksell/llm-proxy/internal/apikeys"
+	"github.com/acksell/llm-proxy/internal/cost"
 	"github.com/gorilla/mux"
 )
 

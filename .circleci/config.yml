@@ -136,7 +136,7 @@ jobs:
             export GIT_SHA=$(cat /tmp/git_sha.txt)
             curl $SLACK_WEBHOOK_URL \
               -X POST \
-              --data-urlencode "payload={\"text\": \":white_check_mark: *production* deployment of *llm-proxy* has successfully deployed with SHA \`$GIT_SHA\` - <https://github.com/Instawork/llm-proxy/commit/$CIRCLE_SHA1|View Commit>\"}"
+              --data-urlencode "payload={\"text\": \":white_check_mark: *production* deployment of *llm-proxy* has successfully deployed with SHA \`$GIT_SHA\` - <https://github.com/acksell/llm-proxy/commit/$CIRCLE_SHA1|View Commit>\"}"
           when: on_success
       - run:
           name: Ping Slack Failure
@@ -144,7 +144,7 @@ jobs:
             export GIT_SHA=$(cat /tmp/git_sha.txt)
             curl $SLACK_WEBHOOK_URL \
               -X POST \
-              --data-urlencode "payload={\"text\": \":red_circle: *production* deployment of *llm-proxy* has failed for SHA \`$GIT_SHA\` - <https://github.com/Instawork/llm-proxy/commit/$CIRCLE_SHA1|View Commit>\"}"
+              --data-urlencode "payload={\"text\": \":red_circle: *production* deployment of *llm-proxy* has failed for SHA \`$GIT_SHA\` - <https://github.com/acksell/llm-proxy/commit/$CIRCLE_SHA1|View Commit>\"}"
           when: on_fail
 
 # Define workflows

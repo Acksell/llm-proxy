@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	internaladmin "github.com/Instawork/llm-proxy/internal/admin"
-	"github.com/Instawork/llm-proxy/internal/apikeys"
-	"github.com/Instawork/llm-proxy/pkg/admin"
 	"github.com/acksell/bezos/dynamodb/ddbstore"
+	internaladmin "github.com/acksell/llm-proxy/internal/admin"
+	"github.com/acksell/llm-proxy/internal/apikeys"
+	"github.com/acksell/llm-proxy/pkg/admin"
 )
 
 const testAdminKey = "test-admin-secret"

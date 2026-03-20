@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
 	"github.com/acksell/bezos/dynamodb/ddbstore"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 // setupTestTransport creates a DynamoDBTransport backed by an in-memory ddbstore.

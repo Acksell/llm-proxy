@@ -1,4 +1,4 @@
-module github.com/Instawork/llm-proxy
+module github.com/acksell/llm-proxy
 
 go 1.24.5
 

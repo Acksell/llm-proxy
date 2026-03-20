@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 // StreamingMiddleware ensures proper handling of streaming responses

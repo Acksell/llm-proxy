@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/config"
-	"github.com/Instawork/llm-proxy/internal/providers"
-	"github.com/Instawork/llm-proxy/internal/ratelimit"
+	"github.com/acksell/llm-proxy/internal/config"
+	"github.com/acksell/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/ratelimit"
 )
 
 // RateLimitingMiddleware enforces rate limits using the provided limiter.

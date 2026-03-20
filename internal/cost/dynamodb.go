@@ -12,8 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	configPkg "github.com/Instawork/llm-proxy/internal/config"
-	ddb "github.com/Instawork/llm-proxy/internal/dynamodb"
+	configPkg "github.com/acksell/llm-proxy/internal/config"
+	ddb "github.com/acksell/llm-proxy/internal/dynamodb"
 )
 
 // DynamoDBTransportConfig holds configuration for the DynamoDB transport

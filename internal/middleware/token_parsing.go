@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 // MetadataCallback is a function that can be hooked into the TokenParsingMiddleware

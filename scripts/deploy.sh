@@ -53,34 +53,6 @@ echo "CPU: ${CPU}"
 echo "Memory: ${MEMORY}"
 echo "==========================================="
 
-# Clone infrastructure repository
-echo "Cloning infrastructure repository..."
-git clone git@github.com:Instawork/infrastructure.git
-
-# Navigate to the correct Terraform directory
-cd infrastructure/live/production/services/llm-proxy/ecs
-
-# Download Terraform
-export TF_IN_AUTOMATION=true
-TF_VERSION=$(cat .terraform-version)
-echo "Downloading Terraform ${TF_VERSION}..."
-wget -q https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
-unzip -q terraform_${TF_VERSION}_linux_amd64.zip
-
-# Initialize Terraform
-echo "Initializing Terraform..."
-./terraform init -input=false
-
-# Apply Terraform changes
-echo "Applying Terraform configuration..."
-./terraform apply -input=false -auto-approve \
-    -var env_name=prod \
-    -var ecr_image_url=${IMAGE_URL} \
-    -var memory=${MEMORY} \
-    -var cpu=${CPU} 
-
-echo "==========================================="
-echo "Deployment completed successfully!"
-echo "Environment: ${DEPLOY_ENV}"
-echo "Image: ${IMAGE_URL}"
-echo "==========================================="
+# todo: deploy via pulumi instead
+echo ""
+echo "NOT IMPLEMENTED, not deploying"

@@ -93,8 +93,8 @@ LABEL \
     org.opencontainers.image.version="${VERSION}" \
     org.opencontainers.image.created="${BUILD_DATE}" \
     org.opencontainers.image.revision="${VCS_REF}" \
-    org.opencontainers.image.vendor="Instawork" \
-    org.opencontainers.image.source="https://github.com/Instawork/llm-proxy" \
+    org.opencontainers.image.vendor="Axel Engström" \
+    org.opencontainers.image.source="https://github.com/acksell/llm-proxy" \
     org.opencontainers.image.licenses="MIT"
 
 # Health check with improved configuration for production

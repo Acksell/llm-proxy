@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 	"github.com/gorilla/mux"
 )
 

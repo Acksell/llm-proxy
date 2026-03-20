@@ -8,9 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Instawork/llm-proxy/internal/apikeys"
-	admintypes "github.com/Instawork/llm-proxy/pkg/admin"
 	"github.com/acksell/bezos/dynamodb/ddbstore"
+	"github.com/acksell/llm-proxy/internal/apikeys"
+	admintypes "github.com/acksell/llm-proxy/pkg/admin"
 )
 
 const testAdminKey = "test-admin-secret"

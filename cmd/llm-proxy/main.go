@@ -14,13 +14,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/apikeys"
-	"github.com/Instawork/llm-proxy/internal/config"
-	"github.com/Instawork/llm-proxy/internal/cost"
-	ddb "github.com/Instawork/llm-proxy/internal/dynamodb"
-	"github.com/Instawork/llm-proxy/internal/middleware"
-	"github.com/Instawork/llm-proxy/internal/providers"
-	"github.com/Instawork/llm-proxy/internal/ratelimit"
+	"github.com/acksell/llm-proxy/internal/apikeys"
+	"github.com/acksell/llm-proxy/internal/config"
+	"github.com/acksell/llm-proxy/internal/cost"
+	ddb "github.com/acksell/llm-proxy/internal/dynamodb"
+	"github.com/acksell/llm-proxy/internal/middleware"
+	"github.com/acksell/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/ratelimit"
 	"github.com/gorilla/mux"
 )
 

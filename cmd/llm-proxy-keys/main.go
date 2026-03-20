@@ -11,9 +11,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/apikeys"
-	"github.com/Instawork/llm-proxy/internal/config"
-	ddb "github.com/Instawork/llm-proxy/internal/dynamodb"
+	"github.com/acksell/llm-proxy/internal/apikeys"
+	"github.com/acksell/llm-proxy/internal/config"
+	ddb "github.com/acksell/llm-proxy/internal/dynamodb"
 )
 
 const (

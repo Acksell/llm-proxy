@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/config"
+	"github.com/acksell/llm-proxy/internal/config"
 )
 
 // memoryLimiter is a thread-safe in-memory rate limiter.

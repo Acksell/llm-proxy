@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 // APIKeyValidationMiddleware validates and potentially replaces API keys for all providers

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Instawork/llm-proxy/internal/providers"
+	"github.com/acksell/llm-proxy/internal/providers"
 )
 
 // isProviderRoute checks if the request is for a provider route
